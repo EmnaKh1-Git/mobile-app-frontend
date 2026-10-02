@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import '../../../models/planning.dart';
 import '../../../core/services/planning_database.dart';
-import 'edit_planning_page.dart';
-import '../widgets/planning_card.dart';
+import 'edit_planning_page.dart'; // À créer après
 
-class PlanningPage extends StatefulWidget {
-  const PlanningPage({super.key});
+class PlanningScreen extends StatefulWidget {
+  const PlanningScreen({super.key});
 
   @override
-  State<PlanningPage> createState() => _PlanningPageState();
+  State<PlanningScreen> createState() => _PlanningScreenState();
 }
 
-class _PlanningPageState extends State<PlanningPage> {
+class _PlanningScreenState extends State<PlanningScreen> {
   List<Planning> _plannings = [];
   String _filter = 'Toutes';
 
@@ -22,65 +21,72 @@ class _PlanningPageState extends State<PlanningPage> {
   }
 
   _loadPlannings() async {
-    await PlanningDatabase.instance.insertDemoData();
     final data = await PlanningDatabase.instance.readAllPlannings();
-    setState(() => _plannings = data);
+    setState(() {
+      _plannings = data;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    // Filtrer la liste selon le bouton sélectionné
     List<Planning> filteredList = _plannings.where((p) {
       if (_filter == 'Toutes') return true;
       return p.statut == _filter;
     }).toList();
 
-    final total = _plannings.length;
-    final aVenir = _plannings.where((p) => p.statut == 'À venir').length;
-    final termines = _plannings.where((p) => p.statut == 'Terminé').length;
-    final annules = _plannings.where((p) => p.statut == 'Annulé').length;
-
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
+      appBar: AppBar(
+        title: const Text("Mon planning", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_today, color: Colors.blue),
+            onPressed: () {},
+          )
+        ],
+      ),
       body: Column(
         children: [
+          // Barre de recherche
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: TextField(
               decoration: InputDecoration(
-                hintText: "Rechercher un lieu (ex : Sousse)",
+                hintText: "Rechercher un lieu...",
                 prefixIcon: const Icon(Icons.search),
                 filled: true,
                 fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               ),
             ),
           ),
+
+          // Filtres (Toutes, À venir, etc.)
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                _buildFilterChip("$total\nToutes", "Toutes"),
-                _buildFilterChip("$aVenir\nÀ venir", "À venir"),
-                _buildFilterChip("$termines\nTerminées", "Terminé"),
-                _buildFilterChip("$annules\nAnnulées", "Annulé"),
+                _buildFilterChip("6\nToutes", "Toutes"),
+                _buildFilterChip("3\nÀ venir", "À venir"),
+                _buildFilterChip("2\nTerminées", "Terminé"),
+                _buildFilterChip("1\nAnnulées", "Annulé"),
               ],
             ),
           ),
+
           const SizedBox(height: 16),
+
+          // Liste des trajets
           Expanded(
-            child: filteredList.isEmpty
-                ? const Center(
-                child: Text("Aucun trajet planifié",
-                    style: TextStyle(color: Colors.grey)))
-                : ListView.builder(
+            child: ListView.builder(
               itemCount: filteredList.length,
               itemBuilder: (context, index) {
-                final p = filteredList[index];
-                return _buildPlanningCard(p);
+                final planning = filteredList[index];
+                return _buildPlanningCard(planning);
               },
             ),
           ),
@@ -88,11 +94,9 @@ class _PlanningPageState extends State<PlanningPage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const EditPlanningPage()),
-          );
-          _loadPlannings();
+          // Naviguer vers l'écran d'ajout
+          await Navigator.push(context, MaterialPageRoute(builder: (_) => const EditPlanningPage()));
+          _loadPlannings(); // Rafraîchir au retour
         },
         backgroundColor: Colors.blue,
         child: const Icon(Icons.add, color: Colors.white),
@@ -117,7 +121,6 @@ class _PlanningPageState extends State<PlanningPage> {
           style: TextStyle(
             color: isSelected ? Colors.white : Colors.black,
             fontWeight: FontWeight.bold,
-            fontSize: 13,
           ),
         ),
       ),
@@ -131,13 +134,7 @@ class _PlanningPageState extends State<PlanningPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          )
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -145,51 +142,34 @@ class _PlanningPageState extends State<PlanningPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(planning.heure,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 16)),
+              Text(planning.heure, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               Container(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: Colors.blue.shade50,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(planning.statut,
-                    style: TextStyle(
-                        color: Colors.blue.shade700, fontSize: 12)),
+                child: Text(planning.statut, style: TextStyle(color: Colors.blue.shade700, fontSize: 12)),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            "${planning.lieuDepart} → ${planning.destination}",
-            style:
-            const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-          ),
+          Text("${planning.lieuDepart} → ${planning.destination}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           const SizedBox(height: 4),
-          Text(
-            "${planning.role} • ${planning.placesDisponibles} places réservées",
-            style: const TextStyle(color: Colors.grey),
-          ),
+          Text("${planning.role} • ${planning.placesDisponibles} places réservées", style: const TextStyle(color: Colors.grey)),
           const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => EditPlanningPage(planning: planning),
-                      ),
-                    );
+                    // Naviguer vers Edit avec les données
+                    await Navigator.push(context, MaterialPageRoute(builder: (_) => EditPlanningPage(planning: planning)));
                     _loadPlannings();
                   },
                   icon: const Icon(Icons.edit, size: 16),
                   label: const Text("Modifier"),
-                  style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.black),
+                  style: OutlinedButton.styleFrom(foregroundColor: Colors.black),
                 ),
               ),
               const SizedBox(width: 8),
@@ -199,10 +179,8 @@ class _PlanningPageState extends State<PlanningPage> {
                     await PlanningDatabase.instance.delete(planning.id!);
                     _loadPlannings();
                   },
-                  icon:
-                  const Icon(Icons.delete, size: 16, color: Colors.red),
-                  label: const Text("Supprimer",
-                      style: TextStyle(color: Colors.red)),
+                  icon: const Icon(Icons.delete, size: 16, color: Colors.red),
+                  label: const Text("Supprimer", style: TextStyle(color: Colors.red)),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Colors.red),
                   ),

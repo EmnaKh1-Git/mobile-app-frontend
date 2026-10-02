@@ -12,8 +12,9 @@ import '../features/trajet/services/trajet_service.dart';
 import '../features/trajet/screens/recherche_trajet_page.dart';
 import '../features/trajet/screens/publier_trajet_page.dart';
 import '../features/trajet/screens/mes_trajets_page.dart';
+import '../features/planning/screens/planning_home.dart';
 
-import '../features/planning/screens/planning_page.dart';
+
 import '../features/messagerie/screens/messagerie_page.dart';
 import '../features/recommendation/screens/recommendation_page.dart';
 import '../features/user/screens/profile_page.dart';
@@ -247,7 +248,7 @@ class AccueilPage extends StatelessWidget {
                           () {
                         _ouvrir(
                           context,
-                          const PlanningPage(),
+                          const PlanningHome(),
                         );
                       },
                     ),
