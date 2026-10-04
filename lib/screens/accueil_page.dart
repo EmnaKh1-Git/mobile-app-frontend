@@ -59,15 +59,19 @@ class AccueilPage extends StatelessWidget {
 
                 Row(
                   children: [
-                    const CircleAvatar(
-                      radius: 23,
-                      backgroundColor: AppColors.primaire,
-                      child: Text(
-                        'Y',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 18,
+                    InkWell(
+                      onTap: () => _ouvrir(context, const ProfilePage()),
+                      borderRadius: BorderRadius.circular(23),
+                      child: const CircleAvatar(
+                        radius: 23,
+                        backgroundColor: AppColors.primaire,
+                        child: Text(
+                          'Y',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 18,
+                          ),
                         ),
                       ),
                     ),
