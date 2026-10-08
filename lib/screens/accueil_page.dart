@@ -12,6 +12,8 @@ import '../features/trajet/services/trajet_service.dart';
 import '../features/trajet/screens/recherche_trajet_page.dart';
 import '../features/trajet/screens/publier_trajet_page.dart';
 import '../features/trajet/screens/mes_trajets_page.dart';
+import '../features/trajet/screens/detail_trajet_page.dart';
+import '../features/trajet/widgets/trajet_card.dart';
 import '../features/planning/screens/planning_home.dart';
 
 
@@ -45,6 +47,12 @@ class AccueilPage extends StatelessWidget {
 
             final prochain =
             prochains.isEmpty ? null : prochains.first;
+
+            // Module Trajets : 3 prochains départs réservables
+            final departs = TrajetService.instance
+                .rechercher()
+                .take(3)
+                .toList();
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(
@@ -169,13 +177,47 @@ class AccueilPage extends StatelessWidget {
                 // PROCHAIN TRAJET
                 // =====================================================
 
-                if (prochain != null)
+                if (!TrajetService.instance.estCharge)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else if (prochain != null) ...[
                   _CarteProchainTrajet(
                     trajet: prochain,
                     onVoir: () {
                       _ouvrir(
                         context,
-                        const MesTrajetsPage(),
+                        DetailTrajetPage(trajet: prochain),
+                      );
+                    },
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        _ouvrir(
+                          context,
+                          const MesTrajetsPage(),
+                        );
+                      },
+                      icon: const Icon(
+                        Icons.directions_car_outlined,
+                        size: 18,
+                      ),
+                      label: Text(
+                        'Gérer mes trajets (${prochains.length})',
+                      ),
+                    ),
+                  ),
+                ] else
+                  _CartePublier(
+                    onPublier: () {
+                      _ouvrir(
+                        context,
+                        const PublierTrajetPage(),
                       );
                     },
                   ),
@@ -295,7 +337,49 @@ class AccueilPage extends StatelessWidget {
                   ],
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
+
+                // =====================================================
+                // DÉPARTS DISPONIBLES (module Trajets)
+                // =====================================================
+
+                if (departs.isNotEmpty) ...[
+                  Row(
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(left: 4),
+                        child: Text(
+                          'Départs disponibles',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () {
+                          _ouvrir(
+                            context,
+                            const RechercheTrajetPage(),
+                          );
+                        },
+                        child: const Text('Voir tout'),
+                      ),
+                    ],
+                  ),
+                  for (final t in departs)
+                    TrajetCard(
+                      trajet: t,
+                      onTap: () {
+                        _ouvrir(
+                          context,
+                          DetailTrajetPage(trajet: t),
+                        );
+                      },
+                    ),
+                  const SizedBox(height: 16),
+                ],
 
                 // =====================================================
                 // RAPPEL NOTATION
@@ -459,6 +543,70 @@ class _CarteProchainTrajet
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================
+// CARTE « PUBLIER » (aucun trajet à venir) — module Trajets
+// ============================================================
+
+class _CartePublier extends StatelessWidget {
+  final VoidCallback onPublier;
+
+  const _CartePublier({required this.onPublier});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.primaireDoux,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          const CircleAvatar(
+            radius: 24,
+            backgroundColor: AppColors.primaire,
+            child: Icon(
+              Icons.directions_car,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Aucun trajet prévu',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Publiez un trajet et partagez vos frais.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.texte2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.primaire,
+              minimumSize: const Size(0, 40),
+            ),
+            onPressed: onPublier,
+            child: const Text('Publier'),
           ),
         ],
       ),
