@@ -16,6 +16,7 @@ import '../features/planning/screens/planning_home.dart';
 
 
 import '../features/messagerie/screens/messagerie_page.dart';
+import '../features/reclamation/screens/reclamation_page.dart';
 import '../features/recommendation/screens/recommendation_page.dart';
 import '../features/user/screens/profile_page.dart';
 
@@ -276,6 +277,19 @@ class AccueilPage extends StatelessWidget {
                         _ouvrir(
                           context,
                           const RecommendationPage(),
+                        );
+                      },
+                    ),
+
+                    _Raccourci(
+                      'Réclamations',
+                      Icons.report_problem_outlined,
+                      const Color(0xFFFFF2E8),
+                      const Color(0xFFEA580C),
+                          () {
+                        _ouvrir(
+                          context,
+                          const ReclamationPage(),
                         );
                       },
                     ),
