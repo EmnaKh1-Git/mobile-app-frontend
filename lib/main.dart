@@ -3,6 +3,7 @@ import 'app/theme.dart';
 import 'screens/accueil_page.dart';
 import 'features/user/screens/login_page.dart';
 import 'features/user/screens/register_page.dart';
+import 'features/user/screens/forgot_password_page.dart';
 import 'features/user/screens/profile_page.dart';
 
 void main() {
@@ -65,6 +66,7 @@ class CovoiturageApp extends StatelessWidget {
       routes: {
         '/login': (context) => const LoginPage(),
         '/register': (context) => const RegisterPage(),
+        '/forgot-password': (context) => const ForgotPasswordPage(),
         '/accueil': (context) => const AccueilPage(),
         '/profile': (context) => const ProfilePage(),
       },

@@ -3,6 +3,9 @@ import '../../../app/theme.dart';
 import '../services/user_service.dart';
 import '../../../screens/accueil_page.dart';
 import 'register_page.dart';
+import 'forgot_password_page.dart';
+import 'widgets/captcha_widget.dart';
+import 'widgets/google_sign_in_modal.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -15,22 +18,35 @@ class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _captchaController = TextEditingController();
+  final _captchaKey = GlobalKey<CaptchaWidgetState>();
+
   final _userService = UserService.instance;
 
   bool _obscurePassword = true;
   bool _rememberMe = true;
   bool _isLoading = false;
+  bool _isGoogleLoading = false;
   String? _errorMessage;
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _captchaController.dispose();
     super.dispose();
   }
 
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
+
+    if (_captchaKey.currentState != null && !_captchaKey.currentState!.validate()) {
+      setState(() {
+        _errorMessage = 'Code de sécurité anti-robot incorrect. Veuillez réessayer.';
+      });
+      _captchaKey.currentState?.refresh();
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -54,14 +70,51 @@ class _LoginPageState extends State<LoginPage> {
       );
     } else {
       setState(() {
-        _errorMessage = _userService.errorMessage ?? 'Échec de la connexion';
+        _errorMessage = _userService.errorMessage ?? 'Identifiants invalides.';
       });
+      _captchaKey.currentState?.refresh();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_errorMessage!),
+          backgroundColor: Colors.red[700],
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
-  void _fillDemoCredentials() {
-    _emailController.text = 'alexandre.dupont@etudiant.univ.fr';
-    _passwordController.text = 'password123';
+  Future<void> _handleGoogleSignIn() async {
+    final account = await GoogleSignInModal.show(context);
+    if (account == null) return;
+
+    setState(() {
+      _isGoogleLoading = true;
+      _errorMessage = null;
+    });
+
+    final success = await _userService.loginWithGoogleAccount(
+      email: account.email,
+      prenom: account.prenom,
+      nom: account.nom,
+      avatarId: account.avatarId,
+      fullUser: account.fullUser,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _isGoogleLoading = false;
+    });
+
+    if (success) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const AccueilPage()),
+      );
+    } else {
+      setState(() {
+        _errorMessage = 'Échec de la connexion avec Google.';
+      });
+    }
   }
 
   @override
@@ -76,11 +129,10 @@ class _LoginPageState extends State<LoginPage> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Logo & Header
                 Center(
                   child: Container(
-                    width: 80,
-                    height: 80,
+                    width: 76,
+                    height: 76,
                     decoration: BoxDecoration(
                       color: AppColors.primaire,
                       borderRadius: BorderRadius.circular(20),
@@ -94,12 +146,12 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                     child: const Icon(
                       Icons.directions_car_filled_rounded,
-                      size: 42,
+                      size: 40,
                       color: Colors.white,
                     ),
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
                 const Text(
                   'Covoiturage Étudiant',
                   textAlign: TextAlign.center,
@@ -110,18 +162,17 @@ class _LoginPageState extends State<LoginPage> {
                     letterSpacing: -0.5,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 const Text(
-                  'Connectez-vous pour partager vos trajets universitaires',
+                  'Connectez-vous avec vos identifiants universitaires',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 13,
                     color: AppColors.texte2,
                   ),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 24),
 
-                // Error Banner if present
                 if (_errorMessage != null) ...[
                   Container(
                     padding: const EdgeInsets.all(12),
@@ -146,9 +197,8 @@ class _LoginPageState extends State<LoginPage> {
                   const SizedBox(height: 16),
                 ],
 
-                // Form Container
                 Container(
-                  padding: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(22),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
@@ -166,73 +216,57 @@ class _LoginPageState extends State<LoginPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // Email Field
                         const Text(
-                          'Email étudiant',
+                          'Email universitaire',
                           style: TextStyle(
-                            fontSize: 14,
+                            fontSize: 13,
                             fontWeight: FontWeight.w600,
                             color: Color(0xFF374151),
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         TextFormField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
-                          autofillHints: const [AutofillHints.email],
-                          decoration: InputDecoration(
-                            hintText: 'exemple@etudiant.univ.fr',
-                            hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
-                            prefixIcon: const Icon(Icons.school_outlined, color: AppColors.primaire),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                            filled: true,
-                            fillColor: const Color(0xFFF9FAFB),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: AppColors.bordure),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: AppColors.bordure),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: AppColors.primaire, width: 2),
-                            ),
+                          decoration: const InputDecoration(
+                            hintText: 'exemple@esprit.tn',
+                            hintStyle: TextStyle(color: Colors.grey, fontSize: 13),
+                            prefixIcon: Icon(Icons.school_outlined, color: AppColors.primaire, size: 20),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
                               return 'Veuillez saisir votre email';
                             }
                             if (!value.contains('@')) {
-                              return 'Veuillez saisir une adresse email valide';
+                              return 'Format email invalide';
                             }
                             return null;
                           },
                         ),
-                        const SizedBox(height: 18),
+                        const SizedBox(height: 16),
 
-                        // Password Field
                         const Text(
                           'Mot de passe',
                           style: TextStyle(
-                            fontSize: 14,
+                            fontSize: 13,
                             fontWeight: FontWeight.w600,
                             color: Color(0xFF374151),
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         TextFormField(
                           controller: _passwordController,
                           obscureText: _obscurePassword,
                           decoration: InputDecoration(
                             hintText: '••••••••',
-                            hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
-                            prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.primaire),
+                            hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
+                            prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.primaire, size: 20),
                             suffixIcon: IconButton(
                               icon: Icon(
                                 _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
                                 color: Colors.grey[600],
+                                size: 20,
                               ),
                               onPressed: () {
                                 setState(() {
@@ -240,43 +274,25 @@ class _LoginPageState extends State<LoginPage> {
                                 });
                               },
                             ),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                            filled: true,
-                            fillColor: const Color(0xFFF9FAFB),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: AppColors.bordure),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: AppColors.bordure),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: AppColors.primaire, width: 2),
-                            ),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                           ),
                           validator: (value) {
                             if (value == null || value.isEmpty) {
                               return 'Veuillez saisir votre mot de passe';
                             }
-                            if (value.length < 6) {
-                              return 'Mot de passe trop court (min. 6 caractères)';
-                            }
                             return null;
                           },
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 10),
 
-                        // Remember Me & Forgot Password
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Row(
                               children: [
                                 SizedBox(
-                                  width: 24,
-                                  height: 24,
+                                  width: 22,
+                                  height: 22,
                                   child: Checkbox(
                                     value: _rememberMe,
                                     activeColor: AppColors.primaire,
@@ -292,16 +308,16 @@ class _LoginPageState extends State<LoginPage> {
                                 ),
                                 const SizedBox(width: 8),
                                 const Text(
-                                  'Se souvenir de moi',
-                                  style: TextStyle(fontSize: 13, color: AppColors.texte2),
+                                  'Se souvenir',
+                                  style: TextStyle(fontSize: 12, color: AppColors.texte2),
                                 ),
                               ],
                             ),
                             TextButton(
                               onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Un lien de réinitialisation sera envoyé à votre email étudiant.'),
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) => const ForgotPasswordPage(),
                                   ),
                                 );
                               },
@@ -311,9 +327,9 @@ class _LoginPageState extends State<LoginPage> {
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
                               child: const Text(
-                                'Oublié ?',
+                                'Mot de passe oublié ?',
                                 style: TextStyle(
-                                  fontSize: 13,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.primaire,
                                 ),
@@ -321,15 +337,20 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 14),
 
-                        // Login Button
+                        CaptchaWidget(
+                          key: _captchaKey,
+                          controller: _captchaController,
+                        ),
+                        const SizedBox(height: 18),
+
                         ElevatedButton(
                           onPressed: _isLoading ? null : _handleLogin,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primaire,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
                             elevation: 0,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -347,34 +368,82 @@ class _LoginPageState extends State<LoginPage> {
                               : const Text(
                                   'Se connecter',
                                   style: TextStyle(
-                                    fontSize: 16,
+                                    fontSize: 15,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
                         ),
 
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 14),
 
-                        // Demo Quick Fill Button
-                        OutlinedButton.icon(
-                          onPressed: _fillDemoCredentials,
-                          icon: const Icon(Icons.flash_on_rounded, size: 18, color: AppColors.accent),
-                          label: const Text(
-                            'Remplir avec le compte Démo',
-                            style: TextStyle(
-                              color: AppColors.accent,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
+                        Row(
+                          children: [
+                            const Expanded(child: Divider(color: AppColors.bordure)),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(
+                                'OU',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey[500],
+                                ),
+                              ),
                             ),
-                          ),
+                            const Expanded(child: Divider(color: AppColors.bordure)),
+                          ],
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        OutlinedButton(
+                          onPressed: _isGoogleLoading ? null : _handleGoogleSignIn,
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 12),
-                            side: const BorderSide(color: AppColors.accentDoux),
-                            backgroundColor: AppColors.accentDoux.withValues(alpha: 0.3),
+                            side: const BorderSide(color: AppColors.bordure),
+                            backgroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
+                          child: _isGoogleLoading
+                              ? const SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      width: 22,
+                                      height: 22,
+                                      decoration: const BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: Colors.white,
+                                      ),
+                                      child: const Center(
+                                        child: Text(
+                                          'G',
+                                          style: TextStyle(
+                                            color: Color(0xFF4285F4),
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 18,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    const Text(
+                                      'Continuer avec Google',
+                                      style: TextStyle(
+                                        color: Color(0xFF374151),
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                         ),
                       ],
                     ),
@@ -383,13 +452,12 @@ class _LoginPageState extends State<LoginPage> {
 
                 const SizedBox(height: 24),
 
-                // Link to Register Page
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const Text(
                       'Pas encore inscrit ? ',
-                      style: TextStyle(color: AppColors.texte2, fontSize: 14),
+                      style: TextStyle(color: AppColors.texte2, fontSize: 13),
                     ),
                     GestureDetector(
                       onTap: () {
@@ -404,7 +472,7 @@ class _LoginPageState extends State<LoginPage> {
                         style: TextStyle(
                           color: AppColors.primaire,
                           fontWeight: FontWeight.bold,
-                          fontSize: 14,
+                          fontSize: 13,
                         ),
                       ),
                     ),
