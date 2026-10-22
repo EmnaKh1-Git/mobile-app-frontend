@@ -19,6 +19,15 @@ class Conversation {
   final int nonLus;
   final bool muet;
 
+  /// Trajet associé (uniquement pour les groupes).
+  final int? trajetId;
+
+  /// Groupe archivé : lecture seule.
+  final bool archive;
+
+  /// Utilisateur bloqué (conversations privées uniquement).
+  final bool bloque;
+
   const Conversation({
     required this.id,
     required this.type,
@@ -29,7 +38,40 @@ class Conversation {
     required this.dateDernierMessage,
     required this.nonLus,
     required this.muet,
+    this.trajetId,
+    this.archive = false,
+    this.bloque = false,
   });
+
+  /// Copie de la conversation avec les champs fournis remplacés.
+  Conversation copyWith({
+    String? titre,
+    String? trajetLabel,
+    List<String>? membres,
+    String? dernierMessage,
+    DateTime? dateDernierMessage,
+    int? nonLus,
+    bool? muet,
+    int? trajetId,
+    bool? archive,
+    bool? bloque,
+  }) {
+    return Conversation(
+      id: id,
+      type: type,
+      titre: titre ?? this.titre,
+      trajetLabel: trajetLabel ?? this.trajetLabel,
+      membres: membres ?? this.membres,
+      dernierMessage: dernierMessage ?? this.dernierMessage,
+      dateDernierMessage:
+          dateDernierMessage ?? this.dateDernierMessage,
+      nonLus: nonLus ?? this.nonLus,
+      muet: muet ?? this.muet,
+      trajetId: trajetId ?? this.trajetId,
+      archive: archive ?? this.archive,
+      bloque: bloque ?? this.bloque,
+    );
+  }
 
   /// Vrai s'il s'agit d'un groupe de trajet.
   bool get estGroupe => type == TypeConversation.groupe;

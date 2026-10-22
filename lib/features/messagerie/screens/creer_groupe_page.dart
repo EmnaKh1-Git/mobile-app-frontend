@@ -5,7 +5,7 @@ import '../../../app/theme.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/helpers.dart';
 
-import '../data/messagerie_mock.dart';
+import '../services/messagerie_service.dart';
 
 // ============================================================
 // PAGE CRÉATION DE GROUPE
@@ -68,14 +68,19 @@ class _CreerGroupePageState
       return;
     }
 
-    ajouterGroupeMock(
-      titre: nom,
-      trajet: _trajetChoisi!,
-      membres: [
-        monNom,
-        ..._passagersChoisis,
-      ],
-    );
+    try {
+      MessagerieService.instance.creerGroupe(
+        titre: nom,
+        trajet: _trajetChoisi!,
+        membres: [
+          monNom,
+          ..._passagersChoisis,
+        ],
+      );
+    } on MessagerieException catch (e) {
+      _erreur(e.message);
+      return;
+    }
 
     Navigator.pop(context, nom);
   }
@@ -93,14 +98,22 @@ class _CreerGroupePageState
   List<String> get _passagersDisponibles {
     final trajet = _trajetChoisi;
     if (trajet == null) return const [];
-    return passagersTrajetMock[trajet.id] ?? const [];
+    return MessagerieService.instance.passagersDuTrajet(
+      trajet.id,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: ListView(
+    return ListenableBuilder(
+      listenable: MessagerieService.instance,
+      builder: (context, _) {
+        final trajets = MessagerieService.instance
+            .trajetsConducteur();
+
+        return Scaffold(
+          body: SafeArea(
+            child: ListView(
           padding: const EdgeInsets.fromLTRB(
             16,
             16,
@@ -154,8 +167,7 @@ class _CreerGroupePageState
 
             const SizedBox(height: 12),
 
-            for (final trajet
-                in trajetsConducteurMock) ...[
+            for (final trajet in trajets) ...[
               _CarteTrajet(
                 trajet: trajet,
                 selectionne:
@@ -287,8 +299,10 @@ class _CreerGroupePageState
               ),
             ),
           ],
-        ),
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

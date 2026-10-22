@@ -4,8 +4,8 @@ import '../../../app/theme.dart';
 
 import '../../../core/constants/app_constants.dart';
 
-import '../data/messagerie_mock.dart';
 import '../models/conversation.dart';
+import '../services/messagerie_service.dart';
 
 // ============================================================
 // PAGE INFOS DU GROUPE
@@ -26,15 +26,12 @@ class InfosGroupePage extends StatefulWidget {
 
 class _InfosGroupePageState
     extends State<InfosGroupePage> {
-  late List<String> _membres;
-  late bool _muet;
-
-  @override
-  void initState() {
-    super.initState();
-    _membres = List.of(widget.conversation.membres);
-    _muet = widget.conversation.muet;
-  }
+  /// Conversation toujours à jour dans le service.
+  Conversation get _conversation =>
+      MessagerieService.instance.conversation(
+        widget.conversation.id,
+      ) ??
+      widget.conversation;
 
   // ---------------------------------------------------------
   // RÔLES ET DONNÉES
@@ -42,14 +39,14 @@ class _InfosGroupePageState
 
   /// Le premier membre de la liste est le conducteur.
   bool get _jeConduis =>
-      _membres.isNotEmpty && _membres.first == monNom;
+      _conversation.membres.isNotEmpty &&
+      _conversation.membres.first == monNom;
 
-  /// Trajet du groupe dans les trajets factices.
+  /// Trajet associé au groupe.
   TrajetPropose? get _trajet {
-    final label = widget.conversation.trajetLabel;
-    return trajetsConducteurMock.where(
-      (t) => label.startsWith(t.label),
-    ).firstOrNull;
+    final trajetId = _conversation.trajetId;
+    if (trajetId == null) return null;
+    return MessagerieService.instance.trajet(trajetId);
   }
 
   /// Passagers du trajet pas encore dans le groupe.
@@ -57,21 +54,12 @@ class _InfosGroupePageState
     final trajet = _trajet;
     if (trajet == null) return const [];
 
-    final passagers =
-        passagersTrajetMock[trajet.id] ?? const [];
+    final passagers = MessagerieService.instance
+        .passagersDuTrajet(trajet.id);
 
     return passagers
-        .where((p) => !_membres.contains(p))
+        .where((p) => !_conversation.membres.contains(p))
         .toList();
-  }
-
-  /// Sauvegarde locale (liste mock, sans base de données).
-  void _enregistrer() {
-    mettreAJourGroupeMock(
-      id: widget.conversation.id,
-      membres: _membres,
-      muet: _muet,
-    );
   }
 
   // ---------------------------------------------------------
@@ -106,10 +94,12 @@ class _InfosGroupePageState
 
     if (choix == null || !mounted) return;
 
-    setState(() {
-      _membres.add(choix);
-    });
-    _enregistrer();
+    _executer(
+      () => MessagerieService.instance.ajouterMembre(
+        widget.conversation.id,
+        choix,
+      ),
+    );
   }
 
   // ---------------------------------------------------------
@@ -150,10 +140,37 @@ class _InfosGroupePageState
 
     if (confirme != true || !mounted) return;
 
-    setState(() {
-      _membres.remove(membre);
-    });
-    _enregistrer();
+    _executer(
+      () => MessagerieService.instance.retirerMembre(
+        widget.conversation.id,
+        membre,
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------
+  // ANNULER UNE RÉSERVATION (simulation)
+  // ---------------------------------------------------------
+
+  void _annulerReservation(String passager) {
+    _executer(
+      () => MessagerieService.instance.annulerReservation(
+        widget.conversation.id,
+        passager,
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------
+  // TERMINER LE TRAJET (simulation → groupe archivé)
+  // ---------------------------------------------------------
+
+  void _terminerTrajet() {
+    _executer(
+      () => MessagerieService.instance.terminerTrajet(
+        widget.conversation.id,
+      ),
+    );
   }
 
   // ---------------------------------------------------------
@@ -202,17 +219,30 @@ class _InfosGroupePageState
     );
   }
 
+  void _executer(void Function() action) {
+    try {
+      action();
+    } on MessagerieException catch (e) {
+      _message(e.message);
+    }
+  }
+
   // ---------------------------------------------------------
   // CONSTRUCTION
   // ---------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
-    final conversation = widget.conversation;
+    return ListenableBuilder(
+      listenable: MessagerieService.instance,
+      builder: (context, _) {
+        final conversation = _conversation;
+        final membres = conversation.membres;
+        final archivee = conversation.archive;
 
-    return Scaffold(
-      body: SafeArea(
-        child: ListView(
+        return Scaffold(
+          body: SafeArea(
+            child: ListView(
           padding: const EdgeInsets.fromLTRB(
             16,
             16,
@@ -285,6 +315,31 @@ class _InfosGroupePageState
               ),
             ),
 
+            if (archivee) ...[
+              const SizedBox(height: 8),
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.bordure,
+                    borderRadius:
+                        BorderRadius.circular(18),
+                  ),
+                  child: const Text(
+                    'Archivé',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.texte2,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+
             const SizedBox(height: 10),
 
             Center(
@@ -330,7 +385,7 @@ class _InfosGroupePageState
             // =====================================================
 
             Text(
-              'Membres (${_membres.length})',
+              'Membres (${membres.length})',
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
@@ -339,17 +394,27 @@ class _InfosGroupePageState
 
             const SizedBox(height: 12),
 
-            for (final membre in _membres)
+            for (final membre in membres)
               _CarteMembre(
                 nom: membre,
                 conducteur:
-                    _membres.first == membre,
+                    membres.first == membre,
                 onRetirer: _jeConduis &&
+                        !archivee &&
                         membre != monNom
                     ? () {
                         _confirmerRetrait(membre);
                       }
                     : null,
+                onAnnulerReservation:
+                    !archivee &&
+                            membres.first != membre
+                        ? () {
+                            _annulerReservation(
+                              membre,
+                            );
+                          }
+                        : null,
               ),
 
             const SizedBox(height: 12),
@@ -358,7 +423,7 @@ class _InfosGroupePageState
             // AJOUTER UN MEMBRE (conducteur uniquement)
             // =====================================================
 
-            if (_jeConduis)
+            if (_jeConduis && !archivee)
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
@@ -439,13 +504,16 @@ class _InfosGroupePageState
                   ),
 
                   Switch(
-                    value: _muet,
-                    onChanged: (valeur) {
-                      setState(() {
-                        _muet = valeur;
-                      });
-                      _enregistrer();
-                    },
+                    value: conversation.muet,
+                    onChanged: archivee
+                        ? null
+                        : (valeur) {
+                            MessagerieService.instance
+                                .changerModeMuet(
+                              widget.conversation.id,
+                              valeur,
+                            );
+                          },
                     activeTrackColor:
                         AppColors.primaire,
                     inactiveTrackColor:
@@ -456,6 +524,33 @@ class _InfosGroupePageState
             ),
 
             const SizedBox(height: 20),
+
+            // =====================================================
+            // TERMINER LE TRAJET (simulation)
+            // =====================================================
+
+            if (!archivee) ...[
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor:
+                        AppColors.primaireDoux,
+                    foregroundColor:
+                        AppColors.primaire,
+                    minimumSize: const Size(
+                      0,
+                      44,
+                    ),
+                  ),
+                  onPressed: _terminerTrajet,
+                  child: const Text(
+                    'Marquer le trajet terminé',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
 
             // =====================================================
             // QUITTER LE GROUPE
@@ -479,8 +574,10 @@ class _InfosGroupePageState
               ),
             ),
           ],
-        ),
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -493,11 +590,13 @@ class _CarteMembre extends StatelessWidget {
   final String nom;
   final bool conducteur;
   final VoidCallback? onRetirer;
+  final VoidCallback? onAnnulerReservation;
 
   const _CarteMembre({
     required this.nom,
     required this.conducteur,
     this.onRetirer,
+    this.onAnnulerReservation,
   });
 
   @override
@@ -513,75 +612,108 @@ class _CarteMembre extends StatelessWidget {
             color: AppColors.bordure,
           ),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor:
-                  AppColors.primaire,
-              child: Text(
-                nom.trim().isEmpty
-                    ? '?'
-                    : nom.trim()[0]
-                        .toUpperCase(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14,
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor:
+                      AppColors.primaire,
+                  child: Text(
+                    nom.trim().isEmpty
+                        ? '?'
+                        : nom.trim()[0]
+                            .toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight:
+                          FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
                 ),
-              ),
+
+                const SizedBox(width: 12),
+
+                Expanded(
+                  child: Text(
+                    nom,
+                    overflow:
+                        TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight:
+                          FontWeight.w700,
+                    ),
+                  ),
+                ),
+
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: conducteur
+                        ? AppColors.infoFond
+                        : AppColors.bordure,
+                    borderRadius:
+                        BorderRadius.circular(18),
+                  ),
+                  child: Text(
+                    conducteur
+                        ? 'Conducteur'
+                        : 'Passager',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight:
+                          FontWeight.w700,
+                      color: conducteur
+                          ? AppColors.infoTexte
+                          : AppColors.texte2,
+                    ),
+                  ),
+                ),
+
+                if (onRetirer != null) ...[
+                  const SizedBox(width: 4),
+                  IconButton(
+                    onPressed: onRetirer,
+                    icon: const Icon(
+                      Icons.person_remove_outlined,
+                      size: 20,
+                      color: AppColors.accent,
+                    ),
+                    tooltip: 'Retirer',
+                  ),
+                ],
+              ],
             ),
 
-            const SizedBox(width: 12),
-
-            Expanded(
-              child: Text(
-                nom,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
+            if (onAnnulerReservation != null) ...[
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: onAnnulerReservation,
+                  icon: const Icon(
+                    Icons.event_busy_outlined,
+                    size: 18,
+                    color: AppColors.accent,
+                  ),
+                  label: const Text(
+                    'Annuler la réservation',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.accent,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 5,
-              ),
-              decoration: BoxDecoration(
-                color: conducteur
-                    ? AppColors.infoFond
-                    : AppColors.bordure,
-                borderRadius:
-                    BorderRadius.circular(18),
-              ),
-              child: Text(
-                conducteur
-                    ? 'Conducteur'
-                    : 'Passager',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: conducteur
-                      ? AppColors.infoTexte
-                      : AppColors.texte2,
-                ),
-              ),
-            ),
-
-            if (onRetirer != null) ...[
-              const SizedBox(width: 4),
-              IconButton(
-                onPressed: onRetirer,
-                icon: const Icon(
-                  Icons.person_remove_outlined,
-                  size: 20,
-                  color: AppColors.accent,
-                ),
-                tooltip: 'Retirer',
               ),
             ],
           ],

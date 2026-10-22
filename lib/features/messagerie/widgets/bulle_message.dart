@@ -17,10 +17,14 @@ class BulleMessage extends StatelessWidget {
   /// (conversations de groupe uniquement).
   final bool afficherNom;
 
+  /// Appui long (ex. signaler un message).
+  final VoidCallback? onLongPress;
+
   const BulleMessage({
     super.key,
     required this.message,
     this.afficherNom = false,
+    this.onLongPress,
   });
 
   // ---------------------------------------------------------
@@ -58,6 +62,8 @@ class BulleMessage extends StatelessWidget {
   Widget _bulle() {
     final mien = message.estMien;
     final nomVisible = afficherNom && !mien;
+    final signale = message.estSignale;
+    final masque = message.masque;
 
     return Row(
       mainAxisAlignment: mien
@@ -65,7 +71,9 @@ class BulleMessage extends StatelessWidget {
           : MainAxisAlignment.start,
       children: [
         Flexible(
-          child: Container(
+          child: GestureDetector(
+            onLongPress: onLongPress,
+            child: Container(
             padding: const EdgeInsets.fromLTRB(
               12,
               8,
@@ -109,14 +117,33 @@ class BulleMessage extends StatelessWidget {
                   const SizedBox(height: 4),
                 ],
 
-                Text(
-                  message.contenu,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: mien
-                        ? Colors.white
-                        : Colors.black87,
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                  children: [
+                    if (masque) ...[
+                      Icon(
+                        Icons.warning_amber_rounded,
+                        size: 15,
+                        color: mien
+                            ? Colors.white70
+                            : AppColors.accent,
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    Flexible(
+                      child: Text(
+                        message.contenu,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: mien
+                              ? Colors.white
+                              : Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
 
                 const SizedBox(height: 4),
@@ -150,8 +177,36 @@ class BulleMessage extends StatelessWidget {
                     ],
                   ],
                 ),
+
+                if (signale) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.flag_outlined,
+                        size: 12,
+                        color: mien
+                            ? Colors.white70
+                            : AppColors.accent,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Signalé',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: mien
+                              ? Colors.white70
+                              : AppColors.accent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
+          ),
           ),
         ),
       ],

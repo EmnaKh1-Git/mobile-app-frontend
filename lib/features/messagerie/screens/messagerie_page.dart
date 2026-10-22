@@ -4,8 +4,8 @@ import '../../../app/theme.dart';
 
 import '../../../core/utils/helpers.dart';
 
-import '../data/messagerie_mock.dart';
 import '../models/conversation.dart';
+import '../services/messagerie_service.dart';
 
 import 'conversation_page.dart';
 import 'creer_groupe_page.dart';
@@ -42,7 +42,7 @@ class _MessageriePageState extends State<MessageriePage> {
   // ---------------------------------------------------------
 
   List<Conversation> get _conversationsFiltrees {
-    var liste = List<Conversation>.of(conversationsMock);
+    var liste = MessagerieService.instance.conversations();
 
     if (_filtre == 'privees') {
       liste = liste
@@ -81,10 +81,9 @@ class _MessageriePageState extends State<MessageriePage> {
     if (!mounted) return;
 
     if (resultat == 'quitte') {
-      retirerGroupeMock(conversation.id);
-
-      // Rafraîchit la liste après le départ du groupe.
-      setState(() {});
+      MessagerieService.instance.quitterGroupe(
+        conversation.id,
+      );
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -106,9 +105,6 @@ class _MessageriePageState extends State<MessageriePage> {
 
     if (!mounted || nom == null) return;
 
-    // La liste mock a changé : on rafraîchit l'affichage.
-    setState(() {});
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Groupe « $nom » créé.'),
@@ -118,18 +114,22 @@ class _MessageriePageState extends State<MessageriePage> {
 
   @override
   Widget build(BuildContext context) {
-    final conversations = _conversationsFiltrees;
-
     return Scaffold(
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(
-            16,
-            16,
-            16,
-            24,
-          ),
-          children: [
+        child: ListenableBuilder(
+          listenable: MessagerieService.instance,
+          builder: (context, _) {
+            final conversations =
+                _conversationsFiltrees;
+
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                24,
+              ),
+              children: [
             // =====================================================
             // HEADER
             // =====================================================
@@ -296,7 +296,9 @@ class _MessageriePageState extends State<MessageriePage> {
 
               const SizedBox(height: 12),
             ],
-          ],
+              ],
+            );
+          },
         ),
       ),
 
@@ -442,6 +444,35 @@ class _CarteConversation extends StatelessWidget {
                             Icons.group_outlined,
                             size: 16,
                             color: AppColors.primaire,
+                          ),
+                        ],
+
+                        if (conversation.archive) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding:
+                                const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color:
+                                  AppColors.bordure,
+                              borderRadius:
+                                  BorderRadius.circular(
+                                18,
+                              ),
+                            ),
+                            child: const Text(
+                              'Archivé',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight:
+                                    FontWeight.w700,
+                                color:
+                                    AppColors.texte2,
+                              ),
+                            ),
                           ),
                         ],
                       ],

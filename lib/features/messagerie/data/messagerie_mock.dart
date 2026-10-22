@@ -82,6 +82,7 @@ final List<Conversation> conversationsMock = [
     dateDernierMessage: DateTime(2026, 10, 8, 8, 20),
     nonLus: 3,
     muet: false,
+    trajetId: 1,
   ),
 
   // --------------------------------------------------------
@@ -101,6 +102,7 @@ final List<Conversation> conversationsMock = [
     dateDernierMessage: DateTime(2026, 10, 5, 16, 48),
     nonLus: 0,
     muet: false,
+    trajetId: 2,
   ),
 ];
 
@@ -479,7 +481,7 @@ String dateMessage(Message message) {
 }
 
 // ============================================================
-// TRAJETS FACTICES (conducteur = moi) — création de groupe
+// TRAJETS FACTICES — création et gestion des groupes
 // ============================================================
 
 class TrajetPropose {
@@ -488,6 +490,9 @@ class TrajetPropose {
   final String villeArrivee;
   final DateTime dateDepart;
   final int placesTotales;
+  final int conducteurId;
+  final String conducteurNom;
+  final bool termine;
 
   const TrajetPropose({
     required this.id,
@@ -495,19 +500,40 @@ class TrajetPropose {
     required this.villeArrivee,
     required this.dateDepart,
     required this.placesTotales,
+    required this.conducteurId,
+    required this.conducteurNom,
+    this.termine = false,
   });
 
   String get label => '$villeDepart → $villeArrivee';
+
+  /// Nombre maximal de membres : places du trajet + le conducteur.
+  int get capaciteGroupe => placesTotales + 1;
+
+  TrajetPropose copyWith({bool? termine}) {
+    return TrajetPropose(
+      id: id,
+      villeDepart: villeDepart,
+      villeArrivee: villeArrivee,
+      dateDepart: dateDepart,
+      placesTotales: placesTotales,
+      conducteurId: conducteurId,
+      conducteurNom: conducteurNom,
+      termine: termine ?? this.termine,
+    );
+  }
 }
 
-/// Les 3 trajets factices dont je suis le conducteur.
-final List<TrajetPropose> trajetsConducteurMock = [
+/// Tous les trajets factices (les miens et ceux des autres).
+final List<TrajetPropose> trajetsMock = [
   TrajetPropose(
     id: 1,
     villeDepart: 'Tunis',
     villeArrivee: 'Hammamet',
     dateDepart: DateTime(2026, 9, 27, 8, 0),
     placesTotales: 4,
+    conducteurId: monId,
+    conducteurNom: monNom,
   ),
   TrajetPropose(
     id: 2,
@@ -515,6 +541,8 @@ final List<TrajetPropose> trajetsConducteurMock = [
     villeArrivee: 'Sousse',
     dateDepart: DateTime(2026, 9, 30, 9, 30),
     placesTotales: 3,
+    conducteurId: mariemId,
+    conducteurNom: 'Mariem Trabelsi',
   ),
   TrajetPropose(
     id: 3,
@@ -522,81 +550,122 @@ final List<TrajetPropose> trajetsConducteurMock = [
     villeArrivee: 'Nabeul',
     dateDepart: DateTime(2026, 10, 2, 7, 45),
     placesTotales: 4,
+    conducteurId: monId,
+    conducteurNom: monNom,
+  ),
+  TrajetPropose(
+    id: 4,
+    villeDepart: 'Tunis',
+    villeArrivee: 'Bizerte',
+    dateDepart: DateTime(2026, 10, 5, 8, 15),
+    placesTotales: 3,
+    conducteurId: monId,
+    conducteurNom: monNom,
   ),
 ];
 
-/// Passagers ayant réservé chaque trajet (factices).
-final Map<int, List<String>> passagersTrajetMock = {
-  1: ['Yassine Ben Salah', 'Sana Mahdi', 'Karim Jlassi'],
-  2: ['Mariem Trabelsi', 'Sana Mahdi'],
-  3: ['Ahmed Gharbi'],
-};
-
 // ============================================================
-// CRÉATION D'UN GROUPE (ajout local, sans base de données)
+// RÉSERVATIONS FACTICES
 // ============================================================
 
-/// Ajoute une conversation de groupe dans la liste
-/// mock et retourne la conversation créée.
-Conversation ajouterGroupeMock({
-  required String titre,
-  required TrajetPropose trajet,
-  required List<String> membres,
-}) {
-  final id = conversationsMock.fold<int>(
-    0,
-    (maximum, c) => c.id > maximum ? c.id : maximum,
-  );
+class Reservation {
+  final int id;
+  final int trajetId;
+  final int passagerId;
+  final String passagerNom;
+  final bool confirmee;
 
-  final conversation = Conversation(
-    id: id + 1,
-    type: TypeConversation.groupe,
-    titre: titre,
-    trajetLabel: '${trajet.label} · '
-        '${fDateCourte(trajet.dateDepart)}',
-    membres: membres,
-    dernierMessage: '$monNom a créé ce groupe.',
-    dateDernierMessage: DateTime.now(),
-    nonLus: 0,
-    muet: false,
-  );
+  const Reservation({
+    required this.id,
+    required this.trajetId,
+    required this.passagerId,
+    required this.passagerNom,
+    required this.confirmee,
+  });
 
-  conversationsMock.add(conversation);
-  return conversation;
+  Reservation copyWith({bool? confirmee}) {
+    return Reservation(
+      id: id,
+      trajetId: trajetId,
+      passagerId: passagerId,
+      passagerNom: passagerNom,
+      confirmee: confirmee ?? this.confirmee,
+    );
+  }
 }
 
-/// Remplace un groupe par une copie mise à jour
-/// (membres et mode muet), sans base de données.
-void mettreAJourGroupeMock({
-  required int id,
-  required List<String> membres,
-  required bool muet,
-}) {
-  final index = conversationsMock.indexWhere(
-    (c) => c.id == id,
-  );
-  if (index == -1) return;
+/// Réservations factices (confirmées et en attente).
+final List<Reservation> reservationsMock = [
+  Reservation(
+    id: 1,
+    trajetId: 1,
+    passagerId: yassineId,
+    passagerNom: 'Yassine Ben Salah',
+    confirmee: true,
+  ),
+  Reservation(
+    id: 2,
+    trajetId: 1,
+    passagerId: sanaId,
+    passagerNom: 'Sana Mahdi',
+    confirmee: true,
+  ),
+  Reservation(
+    id: 3,
+    trajetId: 1,
+    passagerId: karimId,
+    passagerNom: 'Karim Jlassi',
+    confirmee: true,
+  ),
+  Reservation(
+    id: 4,
+    trajetId: 1,
+    passagerId: ahmedId,
+    passagerNom: 'Ahmed Gharbi',
+    confirmee: true,
+  ),
+  Reservation(
+    id: 5,
+    trajetId: 2,
+    passagerId: monId,
+    passagerNom: monNom,
+    confirmee: true,
+  ),
+  Reservation(
+    id: 6,
+    trajetId: 2,
+    passagerId: sanaId,
+    passagerNom: 'Sana Mahdi',
+    confirmee: true,
+  ),
+  Reservation(
+    id: 7,
+    trajetId: 3,
+    passagerId: ahmedId,
+    passagerNom: 'Ahmed Gharbi',
+    confirmee: true,
+  ),
+  Reservation(
+    id: 8,
+    trajetId: 3,
+    passagerId: 7,
+    passagerNom: 'Nour Ben Ali',
+    confirmee: false,
+  ),
+  Reservation(
+    id: 9,
+    trajetId: 4,
+    passagerId: yassineId,
+    passagerNom: 'Yassine Ben Salah',
+    confirmee: true,
+  ),
+  Reservation(
+    id: 10,
+    trajetId: 4,
+    passagerId: karimId,
+    passagerNom: 'Karim Jlassi',
+    confirmee: true,
+  ),
+];
 
-  final ancienne = conversationsMock[index];
 
-  conversationsMock[index] = Conversation(
-    id: ancienne.id,
-    type: ancienne.type,
-    titre: ancienne.titre,
-    trajetLabel: ancienne.trajetLabel,
-    membres: List.of(membres),
-    dernierMessage: ancienne.dernierMessage,
-    dateDernierMessage:
-        ancienne.dateDernierMessage,
-    nonLus: ancienne.nonLus,
-    muet: muet,
-  );
-}
-
-/// Retire un groupe de la liste mock
-/// (après confirmation de « Quitter le groupe »).
-void retirerGroupeMock(int id) {
-  conversationsMock.removeWhere(
-    (c) => c.id == id,
-  );
-}
