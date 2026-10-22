@@ -22,7 +22,7 @@ class _PlanningPageState extends State<PlanningPage> {
   }
 
   _loadPlannings() async {
-    await PlanningDatabase.instance.insertDemoData();
+    
     final data = await PlanningDatabase.instance.readAllPlannings();
     setState(() => _plannings = data);
   }
