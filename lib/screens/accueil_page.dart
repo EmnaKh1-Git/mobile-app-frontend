@@ -19,6 +19,8 @@ import '../features/messagerie/screens/messagerie_page.dart';
 import '../features/reclamation/screens/reclamation_page.dart';
 import '../features/recommendation/screens/recommendation_page.dart';
 import '../features/user/screens/profile_page.dart';
+import '../features/user/services/user_service.dart';
+import '../features/user/screens/widgets/user_avatar_view.dart';
 
 class AccueilPage extends StatelessWidget {
   const AccueilPage({super.key});
@@ -37,8 +39,9 @@ class AccueilPage extends StatelessWidget {
     return Scaffold(
       body: SafeArea(
         child: ListenableBuilder(
-          listenable: TrajetService.instance,
+          listenable: Listenable.merge([TrajetService.instance, UserService.instance]),
           builder: (context, _) {
+            final currentUser = UserService.instance.currentUser;
             final prochains = TrajetService.instance.mesTrajets(
               monId,
               aVenir: true,
@@ -61,39 +64,57 @@ class AccueilPage extends StatelessWidget {
 
                 Row(
                   children: [
-                    const CircleAvatar(
+                    UserAvatarView(
+                      user: currentUser,
                       radius: 23,
-                      backgroundColor: AppColors.primaire,
-                      child: Text(
-                        'Y',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 18,
-                        ),
-                      ),
+                      onTap: () => _ouvrir(context, const ProfilePage()),
                     ),
 
                     const SizedBox(width: 12),
 
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment:
                         CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          const Text(
                             'Bonjour,',
                             style: TextStyle(
                               fontSize: 13,
                               color: AppColors.texte2,
                             ),
                           ),
-                          Text(
-                            monNom,
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                            ),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  currentUser != null ? '${currentUser.prenom} ${currentUser.nom}' : monNom,
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (currentUser != null) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: currentUser.isConducteur ? AppColors.accentDoux : AppColors.primaireDoux,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    currentUser.role.label,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: currentUser.isConducteur ? AppColors.accent : AppColors.primaire,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ],
                       ),
