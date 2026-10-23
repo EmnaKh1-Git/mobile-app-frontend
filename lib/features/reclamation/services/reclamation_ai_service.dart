@@ -12,8 +12,8 @@ class ReclamationAiException implements Exception {
 }
 
 class ReclamationAiService {
-  static const _apiKey = String.fromEnvironment('OPENROUTER_API_KEY');
-  static const _endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+  static const _apiKey = String.fromEnvironment('DEEPSEEK_API_KEY');
+  static const _endpoint = 'https://api.deepseek.com/chat/completions';
 
   Future<String> analyser({
     required String sujet,
@@ -22,7 +22,7 @@ class ReclamationAiService {
     if (_apiKey.isEmpty) {
       throw const ReclamationAiException(
         'L’assistance IA n’est pas configurée. Lancez l’application avec '
-        '--dart-define=OPENROUTER_API_KEY=<votre-clé>.',
+        '--dart-define=DEEPSEEK_API_KEY=<votre-clé>.',
       );
     }
 
@@ -32,11 +32,9 @@ class ReclamationAiService {
           headers: {
             'Authorization': 'Bearer $_apiKey',
             'Content-Type': 'application/json',
-            'HTTP-Referer': 'https://covoiturage-etudiant.local',
-            'X-Title': 'Covoiturage Étudiant - Réclamations',
           },
           body: jsonEncode({
-            'model': 'openai/gpt-4o-mini',
+            'model': 'deepseek-chat',
             'temperature': 0.2,
             'messages': [
               {
@@ -62,7 +60,7 @@ class ReclamationAiService {
       final error = body['error'];
       final message = error is Map ? error['message'] : null;
       throw ReclamationAiException(
-        'OpenRouter a refusé la demande (${response.statusCode})'
+        'DeepSeek a refusé la demande (${response.statusCode})'
         '${message is String ? ': $message' : '.'}',
       );
     }

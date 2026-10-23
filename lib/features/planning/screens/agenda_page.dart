@@ -25,7 +25,7 @@ class _AgendaPageState extends State<AgendaPage> {
     _loadPlannings();
   }
 
-  _loadPlannings() async {
+  Future<void> _loadPlannings() async {
     final data = await PlanningDatabase.instance.readAllPlannings();
     setState(() => _plannings = data);
   }
@@ -154,7 +154,7 @@ class _AgendaPageState extends State<AgendaPage> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  backgroundColor: Colors.blue.shade50.withOpacity(0.4),
+                  backgroundColor: Colors.blue.shade50.withValues(alpha: 0.4),
                 ),
               ),
             ),

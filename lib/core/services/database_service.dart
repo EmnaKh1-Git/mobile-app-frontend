@@ -23,11 +23,13 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2, // <-- ON PASSE EN VERSION 2
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade, // <-- ON AJOUTE LA FONCTION DE MISE À JOUR
     );
   }
 
+  // Cette méthode s'exécute UNIQUEMENT lors d'une toute première installation
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE users (
@@ -82,13 +84,31 @@ class DatabaseService {
     await db.execute('''
       CREATE TABLE planning (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        trajet_id INTEGER NOT NULL,
-        date_planifiee TEXT NOT NULL,
+        lieuDepart TEXT NOT NULL,
+        lieuDepartLat REAL,
+        lieuDepartLng REAL,
+        destination TEXT NOT NULL,
+        destinationLat REAL,
+        destinationLng REAL,
+        date TEXT NOT NULL,
+        heure TEXT NOT NULL,
         statut TEXT NOT NULL,
-        FOREIGN KEY (user_id) REFERENCES users(id),
-        FOREIGN KEY (trajet_id) REFERENCES trajets(id)
+        rappelActif INTEGER NOT NULL,
+        rappelDelai INTEGER NOT NULL,
+        role TEXT NOT NULL,
+        placesDisponibles INTEGER NOT NULL
       )
     ''');
+  }
+
+  // Cette méthode s'exécute si l'application détecte une ancienne version (version 1)
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // On ajoute les colonnes manquantes à la table existante sans perdre les données
+      await db.execute('ALTER TABLE planning ADD COLUMN lieuDepartLat REAL;');
+      await db.execute('ALTER TABLE planning ADD COLUMN lieuDepartLng REAL;');
+      await db.execute('ALTER TABLE planning ADD COLUMN destinationLat REAL;');
+      await db.execute('ALTER TABLE planning ADD COLUMN destinationLng REAL;');
+    }
   }
 }

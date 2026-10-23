@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+
 import '../../../models/planning.dart';
 import '../../../core/services/planning_database.dart';
 import 'edit_planning_page.dart';
-import '../widgets/planning_card.dart';
 
 class PlanningPage extends StatefulWidget {
   const PlanningPage({super.key});
@@ -21,8 +21,7 @@ class _PlanningPageState extends State<PlanningPage> {
     _loadPlannings();
   }
 
-  _loadPlannings() async {
-    await PlanningDatabase.instance.insertDemoData();
+  Future<void> _loadPlannings() async {
     final data = await PlanningDatabase.instance.readAllPlannings();
     setState(() => _plannings = data);
   }
@@ -74,15 +73,18 @@ class _PlanningPageState extends State<PlanningPage> {
           Expanded(
             child: filteredList.isEmpty
                 ? const Center(
-                child: Text("Aucun trajet planifié",
-                    style: TextStyle(color: Colors.grey)))
+                    child: Text(
+                      "Aucun trajet planifié",
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
                 : ListView.builder(
-              itemCount: filteredList.length,
-              itemBuilder: (context, index) {
-                final p = filteredList[index];
-                return _buildPlanningCard(p);
-              },
-            ),
+                    itemCount: filteredList.length,
+                    itemBuilder: (context, index) {
+                      final p = filteredList[index];
+                      return _buildPlanningCard(p);
+                    },
+                  ),
           ),
         ],
       ),
@@ -133,10 +135,10 @@ class _PlanningPageState extends State<PlanningPage> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 4),
-          )
+          ),
         ],
       ),
       child: Column(
@@ -145,27 +147,30 @@ class _PlanningPageState extends State<PlanningPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(planning.heure,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.bold, fontSize: 16)),
+              Text(
+                planning.heure,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
               Container(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: Colors.blue.shade50,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(planning.statut,
-                    style: TextStyle(
-                        color: Colors.blue.shade700, fontSize: 12)),
+                child: Text(
+                  planning.statut,
+                  style: TextStyle(color: Colors.blue.shade700, fontSize: 12),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
             "${planning.lieuDepart} → ${planning.destination}",
-            style:
-            const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
           ),
           const SizedBox(height: 4),
           Text(
@@ -189,7 +194,8 @@ class _PlanningPageState extends State<PlanningPage> {
                   icon: const Icon(Icons.edit, size: 16),
                   label: const Text("Modifier"),
                   style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.black),
+                    foregroundColor: Colors.black,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -199,17 +205,18 @@ class _PlanningPageState extends State<PlanningPage> {
                     await PlanningDatabase.instance.delete(planning.id!);
                     _loadPlannings();
                   },
-                  icon:
-                  const Icon(Icons.delete, size: 16, color: Colors.red),
-                  label: const Text("Supprimer",
-                      style: TextStyle(color: Colors.red)),
+                  icon: const Icon(Icons.delete, size: 16, color: Colors.red),
+                  label: const Text(
+                    "Supprimer",
+                    style: TextStyle(color: Colors.red),
+                  ),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Colors.red),
                   ),
                 ),
               ),
             ],
-          )
+          ),
         ],
       ),
     );

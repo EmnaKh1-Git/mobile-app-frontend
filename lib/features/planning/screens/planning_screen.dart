@@ -20,7 +20,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
     _loadPlannings();
   }
 
-  _loadPlannings() async {
+  Future<void> _loadPlannings() async {
     final data = await PlanningDatabase.instance.readAllPlannings();
     setState(() {
       _plannings = data;
@@ -134,7 +134,7 @@ class _PlanningScreenState extends State<PlanningScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

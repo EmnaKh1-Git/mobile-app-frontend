@@ -53,8 +53,8 @@ class _AppStartupPageState extends State<AppStartupPage>
     Navigator.of(context).pushReplacement(
       PageRouteBuilder<void>(
         transitionDuration: const Duration(milliseconds: 480),
-        pageBuilder: (_, __, ___) => const AppIntroPage(),
-        transitionsBuilder: (_, animation, __, child) => FadeTransition(
+        pageBuilder: (_, _, _) => const AppIntroPage(),
+        transitionsBuilder: (_, animation, _, child) => FadeTransition(
           opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
           child: child,
         ),

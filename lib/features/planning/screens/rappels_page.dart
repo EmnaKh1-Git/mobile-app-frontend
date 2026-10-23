@@ -30,7 +30,7 @@ class _RappelsPageState extends State<RappelsPage> {
     super.dispose();
   }
 
-  _loadPlannings() async {
+  Future<void> _loadPlannings() async {
     final data = await PlanningDatabase.instance.readAllPlannings();
     setState(() {
       _plannings = data.where((p) => p.statut == 'À venir').toList();
@@ -221,7 +221,7 @@ class _RappelsPageState extends State<RappelsPage> {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
-            ..._plannings.map((p) => _buildRappelItem(p)).toList(),
+            ..._plannings.map((p) => _buildRappelItem(p)),
             const SizedBox(height: 24),
             const Text(
               'Délai par défaut',
@@ -324,7 +324,7 @@ class _RappelsPageState extends State<RappelsPage> {
           ),
           Switch(
             value: p.rappelActif,
-            activeColor: Colors.blue,
+            activeThumbColor: Colors.blue,
             onChanged: (val) async {
               final updated = Planning(
                 id: p.id,
