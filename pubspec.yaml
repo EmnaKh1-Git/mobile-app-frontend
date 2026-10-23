@@ -39,9 +39,13 @@ dependencies:
   intl: ^0.19.0
   table_calendar: ^3.1.2
   image_picker: ^1.2.4
+  http: ^1.2.2
+  record: ^7.1.2
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.6
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -60,6 +64,16 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  assets:
+    - assets/images/icon_cov.png
+
+flutter_native_splash:
+  color: "#101828"
+  android: true
+  ios: true
+  web: true
+  android_12:
+    color: "#101828"
 
   # To add assets to your application, add an assets section, like this:
   # assets:

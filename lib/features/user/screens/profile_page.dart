@@ -599,6 +599,22 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               ),
               const Divider(height: 1, indent: 56, color: Color(0xFFDDD6FE)),
+              Container(
+                color: const Color(0xFFF5F3FF),
+                child: _MenuItem(
+                  icon: Icons.report_problem_outlined,
+                  title: 'Réclamations des étudiants',
+                  subtitle: 'Consulter et répondre aux réclamations',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const ReclamationPage(),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const Divider(height: 1, indent: 56, color: Color(0xFFDDD6FE)),
             ],
             _MenuItem(
               icon: Icons.person_outline_rounded,

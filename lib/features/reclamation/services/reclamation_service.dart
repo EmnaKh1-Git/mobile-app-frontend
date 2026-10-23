@@ -32,6 +32,24 @@ class ReclamationService extends ChangeNotifier {
 
   List<Reclamation> get reclamations => List.unmodifiable(_reclamations);
 
+  List<String> get categoriesSysteme {
+    final counts = <String, int>{};
+    for (final reclamation in _reclamations) {
+      final category = reclamation.autreCategorie?.trim();
+      if (reclamation.type == ReclamationType.autre &&
+          category != null &&
+          category.isNotEmpty) {
+        counts[category] = (counts[category] ?? 0) + 1;
+      }
+
+    }
+    return counts.entries
+        .where((entry) => entry.value >= 5)
+        .map((entry) => entry.key)
+        .toList()
+      ..sort();
+  }
+
   void ajouter(Reclamation reclamation) {
     _reclamations.insert(0, reclamation);
     notifyListeners();
@@ -52,6 +70,42 @@ class ReclamationService extends ChangeNotifier {
       trajet: reclamation.trajet,
       date: reclamation.date,
       status: nouveauStatut,
+      autreCategorie: reclamation.autreCategorie,
+      imagePath: reclamation.imagePath,
+      audioPath: reclamation.audioPath,
+      aiConseil: reclamation.aiConseil,
+      responses: reclamation.responses,
+    );
+    notifyListeners();
+  }
+
+  void ajouterReponse(int id, String message) {
+    final normalizedMessage = message.trim();
+    if (normalizedMessage.isEmpty) return;
+
+    final index = _reclamations.indexWhere((reclamation) => reclamation.id == id);
+    if (index == -1) return;
+
+    final reclamation = _reclamations[index];
+    _reclamations[index] = Reclamation(
+      id: reclamation.id,
+      type: reclamation.type,
+      sujet: reclamation.sujet,
+      description: reclamation.description,
+      trajet: reclamation.trajet,
+      date: reclamation.date,
+      status: reclamation.status,
+      autreCategorie: reclamation.autreCategorie,
+      imagePath: reclamation.imagePath,
+      audioPath: reclamation.audioPath,
+      aiConseil: reclamation.aiConseil,
+      responses: [
+        ...reclamation.responses,
+        ReclamationResponse(
+          message: normalizedMessage,
+          date: DateTime.now(),
+        ),
+      ],
     );
     notifyListeners();
   }

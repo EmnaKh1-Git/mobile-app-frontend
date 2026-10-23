@@ -6,6 +6,7 @@ import 'features/user/screens/login_page.dart';
 import 'features/user/screens/register_page.dart';
 import 'features/user/screens/forgot_password_page.dart';
 import 'features/user/screens/profile_page.dart';
+import 'features/onboarding/screens/onboarding_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -64,7 +65,7 @@ class CovoiturageApp extends StatelessWidget {
           ),
         ),
       ),
-      initialRoute: '/login',
+      home: const AppStartupPage(),
       routes: {
         '/login': (context) => const LoginPage(),
         '/register': (context) => const RegisterPage(),

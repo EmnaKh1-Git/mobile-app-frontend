@@ -1,9 +1,17 @@
+import 'dart:async';
+import 'dart:io';
+import 'package:flutter/services.dart';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:record/record.dart';
 
 import '../../../app/theme.dart';
 import '../models/reclamation.dart';
 import '../services/reclamation_service.dart';
+import '../services/reclamation_ai_service.dart';
+import '../../user/services/user_service.dart';
 
 class ReclamationPage extends StatelessWidget {
   const ReclamationPage({super.key});
@@ -164,12 +172,30 @@ class ReclamationDetailsPage extends StatefulWidget {
 }
 
 class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
+  static const _audioChannel = MethodChannel('covoiturage/audio');
+  static const _audioEvents = EventChannel('covoiturage/audio_events');
   late ReclamationStatus _status;
+  final TextEditingController _responseController = TextEditingController();
+  StreamSubscription<dynamic>? _audioEventsSubscription;
+  bool _audioEnLecture = false;
 
   @override
   void initState() {
     super.initState();
     _status = widget.reclamation.status;
+    _audioEventsSubscription = _audioEvents.receiveBroadcastStream().listen((event) {
+      if (event == 'completed' && mounted) {
+        setState(() => _audioEnLecture = false);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _audioChannel.invokeMethod<void>('stop');
+    _audioEventsSubscription?.cancel();
+    _responseController.dispose();
+    super.dispose();
   }
 
   @override
@@ -208,35 +234,44 @@ class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 8),
-                  DropdownButtonFormField<ReclamationStatus>(
-                    initialValue: _status,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  if (UserService.instance.currentUser?.isAdmin ?? false)
+                    DropdownButtonFormField<ReclamationStatus>(
+                      initialValue: _status,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                      ),
+                      items: ReclamationStatus.values
+                          .map(
+                            (status) => DropdownMenuItem(
+                              value: status,
+                              child: Text(_statusLabel(status)),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() => _status = value);
+                        ReclamationService.instance.mettreAJourStatut(
+                          widget.reclamation.id,
+                          value,
+                        );
+                      },
+                    )
+                  else
+                    InputDecorator(
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                      ),
+                      child: Text(_statusLabel(_status)),
                     ),
-                    items: ReclamationStatus.values
-                        .map(
-                          (status) => DropdownMenuItem(
-                            value: status,
-                            child: Text(_statusLabel(status)),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value == null) {
-                        return;
-                      }
-
-                      setState(() {
-                        _status = value;
-                      });
-
-                      ReclamationService.instance.mettreAJourStatut(
-                        widget.reclamation.id,
-                        value,
-                      );
-                    },
-                  ),
                 ],
               ),
             ),
@@ -256,13 +291,154 @@ class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
               border: Border.all(color: AppColors.bordure),
             ),
             child: Text(
-              widget.reclamation.description,
+              widget.reclamation.description.trim().isEmpty
+                  ? 'Description fournie par message vocal.'
+                  : widget.reclamation.description,
               style: const TextStyle(height: 1.5),
             ),
           ),
+          if (widget.reclamation.responses.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            const Text(
+              'Réponses de l’administration',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            ...widget.reclamation.responses.map(
+              (response) => Card(
+                color: AppColors.primaireDoux,
+                child: ListTile(
+                  leading: const Icon(Icons.admin_panel_settings_outlined),
+                  title: Text(response.message),
+                  subtitle: Text(
+                    DateFormat('dd/MM/yyyy à HH:mm', 'fr_FR').format(response.date),
+                  ),
+                ),
+              ),
+            ),
+          ],
+          if (UserService.instance.currentUser?.isAdmin ?? false) ...[
+            const SizedBox(height: 18),
+            const Text(
+              'Répondre à l’étudiant',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _responseController,
+              minLines: 2,
+              maxLines: 5,
+              decoration: const InputDecoration(
+                hintText: 'Écrire une réponse ou une demande d’information...',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: _ajouterReponse,
+                icon: const Icon(Icons.send_outlined),
+                label: const Text('Envoyer la réponse'),
+              ),
+            ),
+          ],
+          if (widget.reclamation.imagePath != null ||
+              widget.reclamation.audioPath != null ||
+              widget.reclamation.aiConseil != null) ...[
+            const SizedBox(height: 16),
+            if (widget.reclamation.imagePath != null)
+              FutureBuilder(
+                future: XFile(widget.reclamation.imagePath!).readAsBytes(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasData) {
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.memory(
+                        snapshot.data!,
+                        height: 220,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                      ),
+                    );
+                  }
+
+                  return const ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.image_outlined),
+                    title: Text('Image jointe'),
+                    subtitle: Text('Chargement de l’image...'),
+                  );
+                },
+              ),
+            if (widget.reclamation.audioPath != null)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.mic_none),
+                title: const Text('Message vocal joint'),
+                subtitle: Text(
+                  _audioEnLecture
+                      ? 'Lecture en cours...'
+                      : 'Appuyer pour écouter',
+                ),
+                trailing: IconButton(
+                  icon: Icon(
+                    _audioEnLecture
+                        ? Icons.stop_circle_outlined
+                        : Icons.play_circle_outline,
+                  ),
+                  onPressed: _lireAudio,
+                ),
+              ),
+            if (widget.reclamation.aiConseil != null) ...[
+              const Text(
+                'Conseil de l’assistance IA',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(widget.reclamation.aiConseil!),
+            ],
+          ],
         ],
       ),
     );
+  }
+
+  void _ajouterReponse() {
+    final message = _responseController.text.trim();
+    if (message.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Écrivez une réponse avant de l’envoyer.')),
+      );
+      return;
+    }
+
+    ReclamationService.instance.ajouterReponse(widget.reclamation.id, message);
+    _responseController.clear();
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Réponse envoyée à l’étudiant.')),
+    );
+  }
+
+  Future<void> _lireAudio() async {
+    try {
+      if (_audioEnLecture) {
+        await _audioChannel.invokeMethod<void>('stop');
+        if (mounted) setState(() => _audioEnLecture = false);
+      } else {
+        await _audioChannel.invokeMethod<void>(
+          'play',
+          {'path': widget.reclamation.audioPath!},
+        );
+        if (mounted) setState(() => _audioEnLecture = true);
+      }
+    } on PlatformException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Impossible de lire le vocal : $error')),
+      );
+    }
   }
 
   String _statusLabel(ReclamationStatus status) {
@@ -289,14 +465,25 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
   final TextEditingController _sujetController = TextEditingController();
   final TextEditingController _trajetController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
+  final TextEditingController _autreCategorieController =
+      TextEditingController();
+  final AudioRecorder _audioRecorder = AudioRecorder();
 
   ReclamationType _type = ReclamationType.autre;
+  String? _categoriePersonnalisee;
+  XFile? _image;
+  String? _audioPath;
+  String? _aiConseil;
+  bool _enregistrement = false;
+  bool _analyseEnCours = false;
 
   @override
   void dispose() {
     _sujetController.dispose();
     _trajetController.dispose();
     _descriptionController.dispose();
+    _autreCategorieController.dispose();
+    _audioRecorder.dispose();
     super.dispose();
   }
 
@@ -329,10 +516,65 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
                 if (value != null) {
                   setState(() {
                     _type = value;
+                    if (value != ReclamationType.autre) {
+                      _categoriePersonnalisee = null;
+                      _autreCategorieController.clear();
+                    }
                   });
                 }
               },
             ),
+            if (_type == ReclamationType.autre) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _categoriePersonnalisee,
+                decoration: const InputDecoration(
+                  labelText: 'Catégorie',
+                  border: OutlineInputBorder(),
+                ),
+                hint: const Text('Choisir une catégorie système ou en proposer une'),
+                items: [
+                  ...ReclamationService.instance.categoriesSysteme.map(
+                    (category) => DropdownMenuItem(
+                      value: category,
+                      child: Text(category),
+                    ),
+                  ),
+                  const DropdownMenuItem(
+                    value: '__nouvelle__',
+                    child: Text('Proposer une nouvelle catégorie'),
+                  ),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _categoriePersonnalisee = value;
+                    if (value != '__nouvelle__') {
+                      _autreCategorieController.text = value ?? '';
+                    } else {
+                      _autreCategorieController.clear();
+                    }
+                  });
+                },
+              ),
+              if (_categoriePersonnalisee == null ||
+                  _categoriePersonnalisee == '__nouvelle__') ...[
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _autreCategorieController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nom de la catégorie à proposer',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (_type == ReclamationType.autre &&
+                        (value ?? '').trim().isEmpty) {
+                      return 'Veuillez préciser la catégorie.';
+                    }
+                    return null;
+                  },
+                ),
+              ],
+            ],
             const SizedBox(height: 16),
             TextFormField(
               controller: _sujetController,
@@ -360,17 +602,72 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
               controller: _descriptionController,
               maxLines: 6,
               decoration: const InputDecoration(
-                labelText: 'Description détaillée',
+                labelText: 'Description détaillée (facultative si vocal)',
                 border: OutlineInputBorder(),
                 alignLabelWithHint: true,
               ),
               validator: (value) {
-                if ((value ?? '').trim().isEmpty) {
+                if ((value ?? '').trim().isEmpty && _audioPath == null) {
                   return 'Veuillez décrire précisément le problème.';
                 }
                 return null;
               },
             ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _choisirImage,
+                    icon: const Icon(Icons.image_outlined),
+                    label: Text(_image == null ? 'Ajouter une image' : 'Image ajoutée'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _enregistrement ? _arreterEnregistrement : _demarrerEnregistrement,
+                    icon: Icon(_enregistrement ? Icons.stop : Icons.mic_none),
+                    label: Text(_enregistrement ? 'Arrêter' : 'Message vocal'),
+                  ),
+                ),
+              ],
+            ),
+            if (_image != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text('Image : ${_image!.name}'),
+              ),
+            if (_audioPath != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text('Vocal enregistré : $_audioPath'),
+              ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _analyseEnCours ? null : _analyserAvecIa,
+              icon: _analyseEnCours
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome),
+              label: Text(_analyseEnCours
+                  ? 'Analyse en cours...'
+                  : 'Obtenir l’aide de l’IA'),
+            ),
+            if (_aiConseil != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.primaireDoux,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(_aiConseil!),
+              ),
+            ],
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _soumettre,
@@ -381,6 +678,73 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _choisirImage() async {
+    final image = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (image != null && mounted) {
+      setState(() => _image = image);
+    }
+  }
+
+  Future<void> _demarrerEnregistrement() async {
+    if (!await _audioRecorder.hasPermission()) {
+      _afficherErreur('L’autorisation du microphone est nécessaire.');
+      return;
+    }
+    final path =
+        '${Directory.systemTemp.path}/reclamation_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    await _audioRecorder.start(
+      const RecordConfig(encoder: AudioEncoder.aacLc),
+      path: path,
+    );
+    if (mounted) {
+      setState(() => _enregistrement = true);
+    }
+  }
+
+  Future<void> _arreterEnregistrement() async {
+    final path = await _audioRecorder.stop();
+    if (mounted) {
+      setState(() {
+        _enregistrement = false;
+        _audioPath = path;
+      });
+    }
+  }
+
+  Future<void> _analyserAvecIa() async {
+    if (_sujetController.text.trim().isEmpty ||
+        _descriptionController.text.trim().isEmpty) {
+      _afficherErreur('Renseignez l’objet et la description avant l’analyse.');
+      return;
+    }
+    setState(() => _analyseEnCours = true);
+    try {
+      final conseil = await ReclamationAiService().analyser(
+        sujet: _sujetController.text.trim(),
+        description: _descriptionController.text.trim(),
+      );
+      if (mounted) {
+        setState(() => _aiConseil = conseil);
+      }
+    } on ReclamationAiException catch (error) {
+      _afficherErreur(error.message);
+    } catch (error) {
+      _afficherErreur('Impossible de contacter l’assistance IA : $error');
+    } finally {
+      if (mounted) {
+        setState(() => _analyseEnCours = false);
+      }
+    }
+  }
+
+  void _afficherErreur(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _soumettre() {
@@ -398,6 +762,12 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
           : _trajetController.text.trim(),
       date: DateTime.now(),
       status: ReclamationStatus.enAttente,
+      autreCategorie: _type == ReclamationType.autre
+          ? _autreCategorieController.text.trim()
+          : null,
+      imagePath: _image?.path,
+      audioPath: _audioPath,
+      aiConseil: _aiConseil,
     );
 
     ReclamationService.instance.ajouter(nouvelleReclamation);
