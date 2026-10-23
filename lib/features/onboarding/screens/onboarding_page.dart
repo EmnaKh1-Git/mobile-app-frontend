@@ -264,6 +264,10 @@ class _SplashRoutePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) {
+      return;
+    }
+
     final path = Path()
       ..moveTo(size.width * .02, size.height * .77)
       ..cubicTo(
@@ -742,4 +746,3 @@ class _Glow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(width: size, height: size, decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)])));
 }
-
