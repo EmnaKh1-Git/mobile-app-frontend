@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+
 import '../models/user_model.dart';
 import 'database_service.dart';
 import 'email_service.dart';
+import '../../../core/services/cloudinary_service.dart';
 
 class UserService extends ChangeNotifier {
   static final UserService _instance = UserService._internal();
@@ -12,6 +14,7 @@ class UserService extends ChangeNotifier {
 
   final DatabaseServicee _db = DatabaseServicee.instance;
   final EmailService _emailService = EmailService.instance;
+  final CloudinaryService _cloudinary = CloudinaryService.instance;
 
   UserModel? _currentUser;
   bool _isLoading = false;
@@ -24,10 +27,7 @@ class UserService extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
-  Future<bool> login({
-    required String email,
-    required String password,
-  }) async {
+  Future<bool> login({required String email, required String password}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -38,7 +38,8 @@ class UserService extends ChangeNotifier {
     final user = await _db.getUserByEmail(normalizedEmail);
 
     if (user != null && user.isBanni) {
-      _errorMessage = '🚫 Ce compte a été suspendu par l\'administration.\n${user.raisonBlocage ?? "Veuillez contacter le support."}';
+      _errorMessage =
+          '🚫 Ce compte a été suspendu par l\'administration.\n${user.raisonBlocage ?? "Veuillez contacter le support."}';
       _isLoading = false;
       notifyListeners();
       return false;
@@ -79,7 +80,8 @@ class UserService extends ChangeNotifier {
     final existingUser = await _db.getUserByEmail(normalizedEmail);
 
     if (existingUser != null && existingUser.isBanni) {
-      _errorMessage = '🚫 Ce compte Google a été suspendu par l\'administration.';
+      _errorMessage =
+          '🚫 Ce compte Google a été suspendu par l\'administration.';
       _isLoading = false;
       notifyListeners();
       return false;
@@ -142,10 +144,20 @@ class UserService extends ChangeNotifier {
     final existing = await _db.getUserByEmail(normalizedEmail);
 
     if (existing != null) {
-      _errorMessage = 'Un compte existe déjà avec cet email. Veuillez vous connecter.';
+      _errorMessage =
+          'Un compte existe déjà avec cet email. Veuillez vous connecter.';
       _isLoading = false;
       notifyListeners();
       return false;
+    }
+
+    var storedAvatarUrl = avatarUrl;
+    if (storedAvatarUrl != null && !storedAvatarUrl.startsWith('avatar_')) {
+      try {
+        storedAvatarUrl = await _cloudinary.uploadIfLocalPath(storedAvatarUrl);
+      } on CloudinaryUploadException {
+        // The local path is retained as an offline fallback.
+      }
     }
 
     final newUser = UserModel(
@@ -158,7 +170,9 @@ class UserService extends ChangeNotifier {
       role: role,
       gouvernorat: gouvernorat,
       universite: universite,
-      avatarUrl: avatarUrl ?? (role.isConducteur ? 'avatar_conducteur' : 'avatar_etudiant'),
+      avatarUrl:
+          storedAvatarUrl ??
+          (role.isConducteur ? 'avatar_conducteur' : 'avatar_etudiant'),
       marqueVehicule: marqueVehicule?.trim(),
       modeleVehicule: modeleVehicule?.trim(),
       couleurVehicule: couleurVehicule?.trim(),
@@ -288,7 +302,10 @@ class UserService extends ChangeNotifier {
     notifyListeners();
 
     final email = _currentUser!.email;
-    final isOldPasswordValid = await _db.verifyCredentials(email, currentPassword);
+    final isOldPasswordValid = await _db.verifyCredentials(
+      email,
+      currentPassword,
+    );
     if (!isOldPasswordValid) {
       _errorMessage = 'Le mot de passe actuel est incorrect.';
       _isLoading = false;
@@ -325,7 +342,15 @@ class UserService extends ChangeNotifier {
 
   Future<void> updateAvatar(String avatarUrl) async {
     if (_currentUser == null) return;
-    _currentUser = _currentUser!.copyWith(avatarUrl: avatarUrl);
+    var storedAvatarUrl = avatarUrl;
+    if (!avatarUrl.startsWith('avatar_')) {
+      try {
+        storedAvatarUrl = await _cloudinary.uploadIfLocalPath(avatarUrl);
+      } on CloudinaryUploadException {
+        // The local path is retained as an offline fallback.
+      }
+    }
+    _currentUser = _currentUser!.copyWith(avatarUrl: storedAvatarUrl);
     await _db.updateUser(_currentUser!);
     notifyListeners();
   }

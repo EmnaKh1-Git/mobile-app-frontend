@@ -23,7 +23,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 2, // <-- ON PASSE EN VERSION 2
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade, // <-- ON AJOUTE LA FONCTION DE MISE À JOUR
     );
@@ -99,6 +99,9 @@ class DatabaseService {
         placesDisponibles INTEGER NOT NULL
       )
     ''');
+
+    await _createAppUsersTable(db);
+    await _createReclamationsTable(db);
   }
 
   // Cette méthode s'exécute si l'application détecte une ancienne version (version 1)
@@ -110,5 +113,57 @@ class DatabaseService {
       await db.execute('ALTER TABLE planning ADD COLUMN destinationLat REAL;');
       await db.execute('ALTER TABLE planning ADD COLUMN destinationLng REAL;');
     }
+    if (oldVersion < 3) {
+      await _createAppUsersTable(db);
+      await _createReclamationsTable(db);
+    }
+  }
+
+  Future<void> _createAppUsersTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS app_users (
+        id TEXT PRIMARY KEY,
+        nom TEXT NOT NULL,
+        prenom TEXT NOT NULL,
+        email TEXT NOT NULL UNIQUE,
+        telephone TEXT NOT NULL,
+        indicatifTel TEXT NOT NULL,
+        role TEXT NOT NULL,
+        avatarUrl TEXT,
+        gouvernorat TEXT NOT NULL,
+        universite TEXT NOT NULL,
+        note REAL NOT NULL,
+        nombreTrajets INTEGER NOT NULL,
+        marqueVehicule TEXT,
+        modeleVehicule TEXT,
+        couleurVehicule TEXT,
+        immatriculation TEXT,
+        placesDisponibles INTEGER NOT NULL,
+        dateInscription TEXT,
+        isBanni INTEGER NOT NULL DEFAULT 0,
+        isBloque INTEGER NOT NULL DEFAULT 0,
+        raisonBlocage TEXT,
+        password TEXT NOT NULL
+      )
+    ''');
+  }
+
+  Future<void> _createReclamationsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS reclamations (
+        id INTEGER PRIMARY KEY,
+        type TEXT NOT NULL,
+        sujet TEXT NOT NULL,
+        description TEXT NOT NULL,
+        trajet TEXT NOT NULL,
+        date TEXT NOT NULL,
+        status TEXT NOT NULL,
+        autreCategorie TEXT,
+        imagePath TEXT,
+        audioPath TEXT,
+        aiConseil TEXT,
+        responses TEXT NOT NULL
+      )
+    ''');
   }
 }

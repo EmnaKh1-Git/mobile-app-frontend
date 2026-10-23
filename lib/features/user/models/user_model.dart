@@ -178,8 +178,8 @@ class UserModel {
       dateInscription: map['dateInscription'] != null
           ? DateTime.tryParse(map['dateInscription'])
           : null,
-      isBanni: map['isBanni'] == true,
-      isBloque: map['isBloque'] == true,
+      isBanni: map['isBanni'] == true || map['isBanni'] == 1,
+      isBloque: map['isBloque'] == true || map['isBloque'] == 1,
       raisonBlocage: map['raisonBlocage'],
     );
   }

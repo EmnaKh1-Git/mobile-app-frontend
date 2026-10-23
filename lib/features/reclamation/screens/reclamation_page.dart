@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:flutter/services.dart';
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ import '../models/reclamation.dart';
 import '../services/reclamation_service.dart';
 import '../services/reclamation_ai_service.dart';
 import '../../user/services/user_service.dart';
+import '../../../core/services/cloudinary_service.dart';
 
 class ReclamationPage extends StatelessWidget {
   const ReclamationPage({super.key});
@@ -66,9 +68,8 @@ class ReclamationPage extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => ReclamationDetailsPage(
-                        reclamation: reclamation,
-                      ),
+                      builder: (_) =>
+                          ReclamationDetailsPage(reclamation: reclamation),
                     ),
                   );
                 },
@@ -132,7 +133,10 @@ class ReclamationPage extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        DateFormat('dd MMM yyyy', 'fr_FR').format(reclamation.date),
+                        DateFormat(
+                          'dd MMM yyyy',
+                          'fr_FR',
+                        ).format(reclamation.date),
                         style: const TextStyle(
                           color: AppColors.texte2,
                           fontSize: 13,
@@ -150,15 +154,40 @@ class ReclamationPage extends StatelessWidget {
         onPressed: () {
           Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (_) => const AjouterReclamationPage(),
-            ),
+            MaterialPageRoute(builder: (_) => const AjouterReclamationPage()),
           );
         },
         icon: const Icon(Icons.add),
         label: const Text('Nouvelle'),
       ),
     );
+  }
+}
+
+class _AttachedImage extends StatelessWidget {
+  final String path;
+
+  const _AttachedImage({required this.path});
+
+  @override
+  Widget build(BuildContext context) {
+    final isNetworkImage =
+        path.startsWith('http://') || path.startsWith('https://');
+    final image = isNetworkImage
+        ? Image.network(
+            path,
+            height: 220,
+            width: double.infinity,
+            fit: BoxFit.cover,
+          )
+        : Image.file(
+            File(path),
+            height: 220,
+            width: double.infinity,
+            fit: BoxFit.cover,
+          );
+
+    return ClipRRect(borderRadius: BorderRadius.circular(12), child: image);
   }
 }
 
@@ -183,7 +212,9 @@ class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
   void initState() {
     super.initState();
     _status = widget.reclamation.status;
-    _audioEventsSubscription = _audioEvents.receiveBroadcastStream().listen((event) {
+    _audioEventsSubscription = _audioEvents.receiveBroadcastStream().listen((
+      event,
+    ) {
       if (event == 'completed' && mounted) {
         setState(() => _audioEnLecture = false);
       }
@@ -201,9 +232,7 @@ class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Détail'),
-      ),
+      appBar: AppBar(title: const Text('Détail')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -225,8 +254,10 @@ class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
                   _InfoRow(label: 'Trajet', value: widget.reclamation.trajet),
                   _InfoRow(
                     label: 'Date',
-                    value: DateFormat('dd MMM yyyy', 'fr_FR')
-                        .format(widget.reclamation.date),
+                    value: DateFormat(
+                      'dd MMM yyyy',
+                      'fr_FR',
+                    ).format(widget.reclamation.date),
                   ),
                   const SizedBox(height: 12),
                   const Text(
@@ -311,7 +342,10 @@ class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
                   leading: const Icon(Icons.admin_panel_settings_outlined),
                   title: Text(response.message),
                   subtitle: Text(
-                    DateFormat('dd/MM/yyyy à HH:mm', 'fr_FR').format(response.date),
+                    DateFormat(
+                      'dd/MM/yyyy à HH:mm',
+                      'fr_FR',
+                    ).format(response.date),
                   ),
                 ),
               ),
@@ -348,29 +382,7 @@ class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
               widget.reclamation.aiConseil != null) ...[
             const SizedBox(height: 16),
             if (widget.reclamation.imagePath != null)
-              FutureBuilder(
-                future: XFile(widget.reclamation.imagePath!).readAsBytes(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasData) {
-                    return ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.memory(
-                        snapshot.data!,
-                        height: 220,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                      ),
-                    );
-                  }
-
-                  return const ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.image_outlined),
-                    title: Text('Image jointe'),
-                    subtitle: Text('Chargement de l’image...'),
-                  );
-                },
-              ),
+              _AttachedImage(path: widget.reclamation.imagePath!),
             if (widget.reclamation.audioPath != null)
               ListTile(
                 contentPadding: EdgeInsets.zero,
@@ -408,7 +420,9 @@ class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
     final message = _responseController.text.trim();
     if (message.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Écrivez une réponse avant de l’envoyer.')),
+        const SnackBar(
+          content: Text('Écrivez une réponse avant de l’envoyer.'),
+        ),
       );
       return;
     }
@@ -427,10 +441,9 @@ class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
         await _audioChannel.invokeMethod<void>('stop');
         if (mounted) setState(() => _audioEnLecture = false);
       } else {
-        await _audioChannel.invokeMethod<void>(
-          'play',
-          {'path': widget.reclamation.audioPath!},
-        );
+        await _audioChannel.invokeMethod<void>('play', {
+          'path': widget.reclamation.audioPath!,
+        });
         if (mounted) setState(() => _audioEnLecture = true);
       }
     } on PlatformException catch (error) {
@@ -490,9 +503,7 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Nouvelle réclamation'),
-      ),
+      appBar: AppBar(title: const Text('Nouvelle réclamation')),
       body: Form(
         key: _formKey,
         child: ListView(
@@ -532,7 +543,9 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
                   labelText: 'Catégorie',
                   border: OutlineInputBorder(),
                 ),
-                hint: const Text('Choisir une catégorie système ou en proposer une'),
+                hint: const Text(
+                  'Choisir une catégorie système ou en proposer une',
+                ),
                 items: [
                   ...ReclamationService.instance.categoriesSysteme.map(
                     (category) => DropdownMenuItem(
@@ -620,13 +633,17 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
                   child: OutlinedButton.icon(
                     onPressed: _choisirImage,
                     icon: const Icon(Icons.image_outlined),
-                    label: Text(_image == null ? 'Ajouter une image' : 'Image ajoutée'),
+                    label: Text(
+                      _image == null ? 'Ajouter une image' : 'Image ajoutée',
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: _enregistrement ? _arreterEnregistrement : _demarrerEnregistrement,
+                    onPressed: _enregistrement
+                        ? _arreterEnregistrement
+                        : _demarrerEnregistrement,
                     icon: Icon(_enregistrement ? Icons.stop : Icons.mic_none),
                     label: Text(_enregistrement ? 'Arrêter' : 'Message vocal'),
                   ),
@@ -653,9 +670,11 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.auto_awesome),
-              label: Text(_analyseEnCours
-                  ? 'Analyse en cours...'
-                  : 'Obtenir l’aide de l’IA'),
+              label: Text(
+                _analyseEnCours
+                    ? 'Analyse en cours...'
+                    : 'Obtenir l’aide de l’IA',
+              ),
             ),
             if (_aiConseil != null) ...[
               const SizedBox(height: 12),
@@ -744,12 +763,24 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
 
   void _afficherErreur(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _soumettre() {
+  Future<void> _soumettre() async {
     if (!_formKey.currentState!.validate()) {
       return;
+    }
+
+    var imagePath = _image?.path;
+    if (imagePath != null) {
+      try {
+        imagePath = await CloudinaryService.instance.uploadIfLocalPath(
+          imagePath,
+        );
+      } on CloudinaryUploadException {
+        // The local path is retained as an offline fallback.
+      }
     }
 
     final nouvelleReclamation = Reclamation(
@@ -765,7 +796,7 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
       autreCategorie: _type == ReclamationType.autre
           ? _autreCategorieController.text.trim()
           : null,
-      imagePath: _image?.path,
+      imagePath: imagePath,
       audioPath: _audioPath,
       aiConseil: _aiConseil,
     );
@@ -773,9 +804,7 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
     ReclamationService.instance.ajouter(nouvelleReclamation);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Réclamation envoyée avec succès.'),
-        ),
+        const SnackBar(content: Text('Réclamation envoyée avec succès.')),
       );
       Navigator.pop(context);
     }
