@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+
 import '../../../app/theme.dart';
 import '../models/user_model.dart';
 import '../models/tunisia_data.dart';
@@ -30,7 +31,9 @@ class _RegisterPageState extends State<RegisterPage> {
   String _selectedMarque = 'Peugeot';
   String _selectedModele = '208';
   String _selectedCouleur = 'Noir';
-  final _immatriculationController = TextEditingController(text: '220 TUN 1234');
+  final _immatriculationController = TextEditingController(
+    text: '220 TUN 1234',
+  );
   int _placesDisponibles = 3;
 
   String _selectedCountryCode = '+216';
@@ -68,7 +71,9 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() {
       _selectedGouvernorat = newGov;
       final univs = kTunisianGovernoratesAndUniversities[newGov] ?? [];
-      _selectedUniversite = univs.isNotEmpty ? univs.first : 'Autre établissement';
+      _selectedUniversite = univs.isNotEmpty
+          ? univs.first
+          : 'Autre établissement';
     });
   }
 
@@ -97,7 +102,9 @@ class _RegisterPageState extends State<RegisterPage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Photo sélectionnée avec succès depuis votre appareil !'),
+              content: Text(
+                'Photo sélectionnée avec succès depuis votre appareil !',
+              ),
               backgroundColor: Color(0xFF10B981),
             ),
           );
@@ -155,7 +162,10 @@ class _RegisterPageState extends State<RegisterPage> {
               }
               Navigator.of(ctx).pop();
             },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaire, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaire,
+              foregroundColor: Colors.white,
+            ),
             child: const Text('Confirmer'),
           ),
         ],
@@ -201,14 +211,20 @@ class _RegisterPageState extends State<RegisterPage> {
                   backgroundColor: AppColors.primaire,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
 
               const Text(
                 'Ou choisir un avatar de profil :',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF374151)),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF374151),
+                ),
               ),
               const SizedBox(height: 12),
               Wrap(
@@ -227,7 +243,9 @@ class _RegisterPageState extends State<RegisterPage> {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: isSelected ? AppColors.primaire : Colors.transparent,
+                          color: isSelected
+                              ? AppColors.primaire
+                              : Colors.transparent,
                           width: 2.5,
                         ),
                       ),
@@ -237,14 +255,20 @@ class _RegisterPageState extends State<RegisterPage> {
                           CircleAvatar(
                             radius: 28,
                             backgroundColor: item.color,
-                            child: Icon(item.icon, color: Colors.white, size: 26),
+                            child: Icon(
+                              item.icon,
+                              color: Colors.white,
+                              size: 26,
+                            ),
                           ),
                           const SizedBox(height: 6),
                           Text(
                             item.label,
                             style: TextStyle(
                               fontSize: 11,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.w500,
                             ),
                           ),
                         ],
@@ -266,14 +290,17 @@ class _RegisterPageState extends State<RegisterPage> {
     if (!_acceptTerms) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Veuillez accepter la charte et les conditions d\'utilisation.'),
+          content: Text(
+            'Veuillez accepter la charte et les conditions d\'utilisation.',
+          ),
           backgroundColor: Colors.orange,
         ),
       );
       return;
     }
 
-    if (_captchaKey.currentState != null && !_captchaKey.currentState!.validate()) {
+    if (_captchaKey.currentState != null &&
+        !_captchaKey.currentState!.validate()) {
       setState(() {
         _errorMessage = 'Code anti-robot invalide. Veuillez vérifier le code.';
       });
@@ -300,7 +327,9 @@ class _RegisterPageState extends State<RegisterPage> {
       marqueVehicule: _selectedRole.isConducteur ? _selectedMarque : null,
       modeleVehicule: _selectedRole.isConducteur ? _selectedModele : null,
       couleurVehicule: _selectedRole.isConducteur ? _selectedCouleur : null,
-      immatriculation: _selectedRole.isConducteur ? _immatriculationController.text : null,
+      immatriculation: _selectedRole.isConducteur
+          ? _immatriculationController.text
+          : null,
       placesDisponibles: _selectedRole.isConducteur ? _placesDisponibles : 0,
     );
 
@@ -313,7 +342,9 @@ class _RegisterPageState extends State<RegisterPage> {
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Compte créé avec succès ! Bienvenue sur Covoiturage Étudiant.'),
+          content: Text(
+            'Compte créé avec succès ! Bienvenue sur Covoiturage Étudiant.',
+          ),
           backgroundColor: Colors.green,
         ),
       );
@@ -323,7 +354,8 @@ class _RegisterPageState extends State<RegisterPage> {
       );
     } else {
       setState(() {
-        _errorMessage = _userService.errorMessage ?? 'Erreur lors de l\'inscription.';
+        _errorMessage =
+            _userService.errorMessage ?? 'Erreur lors de l\'inscription.';
       });
       _captchaKey.currentState?.refresh();
     }
@@ -331,13 +363,17 @@ class _RegisterPageState extends State<RegisterPage> {
 
   @override
   Widget build(BuildContext context) {
-    final universitesDisponibles = kTunisianGovernoratesAndUniversities[_selectedGouvernorat] ?? [];
-    final modelesDisponibles = kCarBrandsAndModels[_selectedMarque] ?? ['Autre modèle'];
+    final universitesDisponibles =
+        kTunisianGovernoratesAndUniversities[_selectedGouvernorat] ?? [];
+    final modelesDisponibles =
+        kCarBrandsAndModels[_selectedMarque] ?? ['Autre modèle'];
 
     final previewUser = UserModel(
       id: 'preview',
       nom: _nomController.text.isNotEmpty ? _nomController.text : 'Nom',
-      prenom: _prenomController.text.isNotEmpty ? _prenomController.text : 'Prénom',
+      prenom: _prenomController.text.isNotEmpty
+          ? _prenomController.text
+          : 'Prénom',
       email: '',
       telephone: '',
       role: _selectedRole,
@@ -345,13 +381,16 @@ class _RegisterPageState extends State<RegisterPage> {
     );
 
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: AppColors.fond,
       appBar: AppBar(
-        title: const Text('Créer un compte', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        title: const Text(
+          'Créer un compte',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        foregroundColor: const Color(0xFF1F2937),
+        foregroundColor: AppColors.primaire,
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -365,17 +404,14 @@ class _RegisterPageState extends State<RegisterPage> {
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF1F2937),
+                  color: AppColors.primaire,
                 ),
               ),
               const SizedBox(height: 4),
               const Text(
                 'Partagez vos trajets universitaires en toute sécurité',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: AppColors.texte2,
-                ),
+                style: TextStyle(fontSize: 13, color: AppColors.texte2),
               ),
               const SizedBox(height: 18),
 
@@ -389,12 +425,19 @@ class _RegisterPageState extends State<RegisterPage> {
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.error_outline, color: Colors.red[700], size: 20),
+                      Icon(
+                        Icons.error_outline,
+                        color: Colors.red[700],
+                        size: 20,
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           _errorMessage!,
-                          style: TextStyle(color: Colors.red[700], fontSize: 13),
+                          style: TextStyle(
+                            color: Colors.red[700],
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ],
@@ -415,7 +458,7 @@ class _RegisterPageState extends State<RegisterPage> {
                       offset: const Offset(0, 4),
                     ),
                   ],
-                  border: Border.all(color: AppColors.bordure),
+                  border: Border.all(color: Colors.white),
                 ),
                 child: Form(
                   key: _formKey,
@@ -450,7 +493,11 @@ class _RegisterPageState extends State<RegisterPage> {
 
                       const Text(
                         'Vous êtes :',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF374151)),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF374151),
+                        ),
                       ),
                       const SizedBox(height: 10),
                       Row(
@@ -460,7 +507,9 @@ class _RegisterPageState extends State<RegisterPage> {
                               title: 'Passager',
                               icon: Icons.person_outline_rounded,
                               isSelected: _selectedRole == UserRole.passager,
-                              onTap: () => setState(() => _selectedRole = UserRole.passager),
+                              onTap: () => setState(
+                                () => _selectedRole = UserRole.passager,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -469,7 +518,9 @@ class _RegisterPageState extends State<RegisterPage> {
                               title: 'Conducteur',
                               icon: Icons.directions_car_outlined,
                               isSelected: _selectedRole == UserRole.conducteur,
-                              onTap: () => setState(() => _selectedRole = UserRole.conducteur),
+                              onTap: () => setState(
+                                () => _selectedRole = UserRole.conducteur,
+                              ),
                             ),
                           ),
                         ],
@@ -482,12 +533,24 @@ class _RegisterPageState extends State<RegisterPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('Prénom', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                                const Text(
+                                  'Prénom',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                                 const SizedBox(height: 6),
                                 TextFormField(
                                   controller: _prenomController,
-                                  decoration: _buildInputDecoration('Prénom', Icons.person_outline),
-                                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Requis' : null,
+                                  decoration: _buildInputDecoration(
+                                    'Prénom',
+                                    Icons.person_outline,
+                                  ),
+                                  validator: (v) =>
+                                      (v == null || v.trim().isEmpty)
+                                      ? 'Requis'
+                                      : null,
                                 ),
                               ],
                             ),
@@ -497,12 +560,24 @@ class _RegisterPageState extends State<RegisterPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('Nom', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                                const Text(
+                                  'Nom',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                                 const SizedBox(height: 6),
                                 TextFormField(
                                   controller: _nomController,
-                                  decoration: _buildInputDecoration('Nom', Icons.badge_outlined),
-                                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Requis' : null,
+                                  decoration: _buildInputDecoration(
+                                    'Nom',
+                                    Icons.badge_outlined,
+                                  ),
+                                  validator: (v) =>
+                                      (v == null || v.trim().isEmpty)
+                                      ? 'Requis'
+                                      : null,
                                 ),
                               ],
                             ),
@@ -511,12 +586,21 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
                       const SizedBox(height: 14),
 
-                      const Text('Email universitaire', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      const Text(
+                        'Email universitaire',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       const SizedBox(height: 6),
                       TextFormField(
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
-                        decoration: _buildInputDecoration('prenom.nom@esprit.tn', Icons.school_outlined),
+                        decoration: _buildInputDecoration(
+                          'prenom.nom@esprit.tn',
+                          Icons.school_outlined,
+                        ),
                         validator: (value) {
                           if (value == null || value.trim().isEmpty) {
                             return 'Veuillez saisir votre email';
@@ -529,7 +613,13 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
                       const SizedBox(height: 14),
 
-                      const Text('Numéro de téléphone', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      const Text(
+                        'Numéro de téléphone',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       const SizedBox(height: 6),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -545,25 +635,35 @@ class _RegisterPageState extends State<RegisterPage> {
                             child: DropdownButtonHideUnderline(
                               child: DropdownButton<String>(
                                 value: _selectedCountryCode,
-                                icon: const Icon(Icons.arrow_drop_down, size: 20),
+                                icon: const Icon(
+                                  Icons.arrow_drop_down,
+                                  size: 20,
+                                ),
                                 items: kCountryCodes.map((country) {
                                   return DropdownMenuItem<String>(
                                     value: country.code,
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Text(country.flag, style: const TextStyle(fontSize: 18)),
+                                        Text(
+                                          country.flag,
+                                          style: const TextStyle(fontSize: 18),
+                                        ),
                                         const SizedBox(width: 6),
                                         Text(
                                           country.code,
-                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                         ),
                                       ],
                                     ),
                                   );
                                 }).toList(),
                                 onChanged: (val) {
-                                  if (val != null) setState(() => _selectedCountryCode = val);
+                                  if (val != null)
+                                    setState(() => _selectedCountryCode = val);
                                 },
                               ),
                             ),
@@ -573,7 +673,10 @@ class _RegisterPageState extends State<RegisterPage> {
                             child: TextFormField(
                               controller: _phoneController,
                               keyboardType: TextInputType.phone,
-                              decoration: _buildInputDecoration('20 123 456', Icons.phone_android_outlined),
+                              decoration: _buildInputDecoration(
+                                '20 123 456',
+                                Icons.phone_android_outlined,
+                              ),
                               validator: (value) {
                                 if (value == null || value.trim().isEmpty) {
                                   return 'Téléphone requis';
@@ -589,7 +692,13 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
                       const SizedBox(height: 14),
 
-                      const Text('Gouvernorat (24 régions de Tunisie)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      const Text(
+                        'Gouvernorat (24 régions de Tunisie)',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       const SizedBox(height: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -601,28 +710,48 @@ class _RegisterPageState extends State<RegisterPage> {
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<String>(
                             isExpanded: true,
-                            value: kTunisianGovernoratesAndUniversities.containsKey(_selectedGouvernorat)
+                            value:
+                                kTunisianGovernoratesAndUniversities
+                                    .containsKey(_selectedGouvernorat)
                                 ? _selectedGouvernorat
                                 : 'Tunis',
-                            items: kTunisianGovernoratesAndUniversities.keys.map((gov) {
-                              return DropdownMenuItem<String>(
-                                value: gov,
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.location_on_outlined, size: 18, color: AppColors.primaire),
-                                    const SizedBox(width: 8),
-                                    Text(gov, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
+                            items: kTunisianGovernoratesAndUniversities.keys
+                                .map((gov) {
+                                  return DropdownMenuItem<String>(
+                                    value: gov,
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.location_on_outlined,
+                                          size: 18,
+                                          color: AppColors.primaire,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          gov,
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                })
+                                .toList(),
                             onChanged: _onGouvernoratChanged,
                           ),
                         ),
                       ),
                       const SizedBox(height: 14),
 
-                      const Text('Université / Faculté', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      const Text(
+                        'Université / Faculté',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       const SizedBox(height: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -634,21 +763,30 @@ class _RegisterPageState extends State<RegisterPage> {
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<String>(
                             isExpanded: true,
-                            value: universitesDisponibles.contains(_selectedUniversite)
+                            value:
+                                universitesDisponibles.contains(
+                                  _selectedUniversite,
+                                )
                                 ? _selectedUniversite
-                                : (universitesDisponibles.isNotEmpty ? universitesDisponibles.first : null),
+                                : (universitesDisponibles.isNotEmpty
+                                      ? universitesDisponibles.first
+                                      : null),
                             items: universitesDisponibles.map((univ) {
                               return DropdownMenuItem<String>(
                                 value: univ,
                                 child: Text(
                                   univ,
-                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               );
                             }).toList(),
                             onChanged: (val) {
-                              if (val != null) setState(() => _selectedUniversite = val);
+                              if (val != null)
+                                setState(() => _selectedUniversite = val);
                             },
                           ),
                         ),
@@ -659,16 +797,24 @@ class _RegisterPageState extends State<RegisterPage> {
                         Container(
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: AppColors.primaireDoux.withValues(alpha: 0.4),
+                            color: AppColors.primaireDoux.withValues(
+                              alpha: 0.4,
+                            ),
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: AppColors.primaire.withValues(alpha: 0.2)),
+                            border: Border.all(
+                              color: AppColors.primaire.withValues(alpha: 0.2),
+                            ),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Row(
                                 children: [
-                                  Icon(Icons.directions_car_filled_rounded, color: AppColors.primaire, size: 20),
+                                  Icon(
+                                    Icons.directions_car_filled_rounded,
+                                    color: AppColors.primaire,
+                                    size: 20,
+                                  ),
                                   SizedBox(width: 8),
                                   Text(
                                     'Détails du véhicule (Conducteur)',
@@ -686,26 +832,53 @@ class _RegisterPageState extends State<RegisterPage> {
                                 children: [
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        const Text('Marque', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                        const Text(
+                                          'Marque',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
                                         const SizedBox(height: 4),
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                          ),
                                           decoration: BoxDecoration(
                                             color: Colors.white,
-                                            borderRadius: BorderRadius.circular(10),
-                                            border: Border.all(color: AppColors.bordure),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                            border: Border.all(
+                                              color: AppColors.bordure,
+                                            ),
                                           ),
                                           child: DropdownButtonHideUnderline(
                                             child: DropdownButton<String>(
                                               isExpanded: true,
-                                              value: kCarBrandsAndModels.containsKey(_selectedMarque)
+                                              value:
+                                                  kCarBrandsAndModels
+                                                      .containsKey(
+                                                        _selectedMarque,
+                                                      )
                                                   ? _selectedMarque
                                                   : 'Peugeot',
-                                              items: kCarBrandsAndModels.keys.map((b) {
-                                                return DropdownMenuItem(value: b, child: Text(b, style: const TextStyle(fontSize: 13)));
-                                              }).toList(),
+                                              items: kCarBrandsAndModels.keys
+                                                  .map((b) {
+                                                    return DropdownMenuItem(
+                                                      value: b,
+                                                      child: Text(
+                                                        b,
+                                                        style: const TextStyle(
+                                                          fontSize: 13,
+                                                        ),
+                                                      ),
+                                                    );
+                                                  })
+                                                  .toList(),
                                               onChanged: _onMarqueChanged,
                                             ),
                                           ),
@@ -716,28 +889,63 @@ class _RegisterPageState extends State<RegisterPage> {
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        const Text('Modèle', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                        const Text(
+                                          'Modèle',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
                                         const SizedBox(height: 4),
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                          ),
                                           decoration: BoxDecoration(
                                             color: Colors.white,
-                                            borderRadius: BorderRadius.circular(10),
-                                            border: Border.all(color: AppColors.bordure),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                            border: Border.all(
+                                              color: AppColors.bordure,
+                                            ),
                                           ),
                                           child: DropdownButtonHideUnderline(
                                             child: DropdownButton<String>(
                                               isExpanded: true,
-                                              value: modelesDisponibles.contains(_selectedModele)
+                                              value:
+                                                  modelesDisponibles.contains(
+                                                    _selectedModele,
+                                                  )
                                                   ? _selectedModele
-                                                  : (modelesDisponibles.isNotEmpty ? modelesDisponibles.first : null),
-                                              items: modelesDisponibles.map((m) {
-                                                return DropdownMenuItem(value: m, child: Text(m, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis));
+                                                  : (modelesDisponibles
+                                                            .isNotEmpty
+                                                        ? modelesDisponibles
+                                                              .first
+                                                        : null),
+                                              items: modelesDisponibles.map((
+                                                m,
+                                              ) {
+                                                return DropdownMenuItem(
+                                                  value: m,
+                                                  child: Text(
+                                                    m,
+                                                    style: const TextStyle(
+                                                      fontSize: 13,
+                                                    ),
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                );
                                               }).toList(),
                                               onChanged: (val) {
-                                                if (val != null) setState(() => _selectedModele = val);
+                                                if (val != null)
+                                                  setState(
+                                                    () => _selectedModele = val,
+                                                  );
                                               },
                                             ),
                                           ),
@@ -753,26 +961,56 @@ class _RegisterPageState extends State<RegisterPage> {
                                 children: [
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        const Text('Couleur', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                        const Text(
+                                          'Couleur',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
                                         const SizedBox(height: 4),
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                          ),
                                           decoration: BoxDecoration(
                                             color: Colors.white,
-                                            borderRadius: BorderRadius.circular(10),
-                                            border: Border.all(color: AppColors.bordure),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                            border: Border.all(
+                                              color: AppColors.bordure,
+                                            ),
                                           ),
                                           child: DropdownButtonHideUnderline(
                                             child: DropdownButton<String>(
                                               isExpanded: true,
-                                              value: kCarColors.contains(_selectedCouleur) ? _selectedCouleur : 'Noir',
+                                              value:
+                                                  kCarColors.contains(
+                                                    _selectedCouleur,
+                                                  )
+                                                  ? _selectedCouleur
+                                                  : 'Noir',
                                               items: kCarColors.map((c) {
-                                                return DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 13)));
+                                                return DropdownMenuItem(
+                                                  value: c,
+                                                  child: Text(
+                                                    c,
+                                                    style: const TextStyle(
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                );
                                               }).toList(),
                                               onChanged: (val) {
-                                                if (val != null) setState(() => _selectedCouleur = val);
+                                                if (val != null)
+                                                  setState(
+                                                    () =>
+                                                        _selectedCouleur = val,
+                                                  );
                                               },
                                             ),
                                           ),
@@ -783,13 +1021,24 @@ class _RegisterPageState extends State<RegisterPage> {
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        const Text('Immatriculation', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                        const Text(
+                                          'Immatriculation',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
                                         const SizedBox(height: 4),
                                         TextFormField(
-                                          controller: _immatriculationController,
-                                          decoration: _buildInputDecoration('220 TUN 1234', Icons.pin_outlined),
+                                          controller:
+                                              _immatriculationController,
+                                          decoration: _buildInputDecoration(
+                                            '220 TUN 1234',
+                                            Icons.pin_outlined,
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -799,11 +1048,15 @@ class _RegisterPageState extends State<RegisterPage> {
                               const SizedBox(height: 12),
 
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   const Text(
                                     'Places disponibles :',
-                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                   Row(
                                     children: [1, 2, 3, 4].map((count) {
@@ -811,20 +1064,30 @@ class _RegisterPageState extends State<RegisterPage> {
                                       return Padding(
                                         padding: const EdgeInsets.only(left: 6),
                                         child: InkWell(
-                                          onTap: () => setState(() => _placesDisponibles = count),
+                                          onTap: () => setState(
+                                            () => _placesDisponibles = count,
+                                          ),
                                           child: Container(
                                             width: 32,
                                             height: 32,
                                             decoration: BoxDecoration(
-                                              color: isSel ? AppColors.primaire : Colors.white,
+                                              color: isSel
+                                                  ? AppColors.primaire
+                                                  : Colors.white,
                                               shape: BoxShape.circle,
-                                              border: Border.all(color: isSel ? AppColors.primaire : AppColors.bordure),
+                                              border: Border.all(
+                                                color: isSel
+                                                    ? AppColors.primaire
+                                                    : AppColors.bordure,
+                                              ),
                                             ),
                                             child: Center(
                                               child: Text(
                                                 '$count',
                                                 style: TextStyle(
-                                                  color: isSel ? Colors.white : const Color(0xFF374151),
+                                                  color: isSel
+                                                      ? Colors.white
+                                                      : const Color(0xFF374151),
                                                   fontWeight: FontWeight.bold,
                                                   fontSize: 12,
                                                 ),
@@ -843,17 +1106,34 @@ class _RegisterPageState extends State<RegisterPage> {
                         const SizedBox(height: 14),
                       ],
 
-                      const Text('Mot de passe', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      const Text(
+                        'Mot de passe',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       const SizedBox(height: 6),
                       TextFormField(
                         controller: _passwordController,
                         obscureText: _obscurePassword,
-                        decoration: _buildInputDecoration('••••••••', Icons.lock_outline).copyWith(
-                          suffixIcon: IconButton(
-                            icon: Icon(_obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20),
-                            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                          ),
-                        ),
+                        decoration:
+                            _buildInputDecoration(
+                              '••••••••',
+                              Icons.lock_outline,
+                            ).copyWith(
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                  size: 20,
+                                ),
+                                onPressed: () => setState(
+                                  () => _obscurePassword = !_obscurePassword,
+                                ),
+                              ),
+                            ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
                             return 'Veuillez choisir un mot de passe';
@@ -866,17 +1146,35 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
                       const SizedBox(height: 14),
 
-                      const Text('Confirmer le mot de passe', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      const Text(
+                        'Confirmer le mot de passe',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       const SizedBox(height: 6),
                       TextFormField(
                         controller: _confirmPasswordController,
                         obscureText: _obscureConfirmPassword,
-                        decoration: _buildInputDecoration('••••••••', Icons.lock_outline).copyWith(
-                          suffixIcon: IconButton(
-                            icon: Icon(_obscureConfirmPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20),
-                            onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
-                          ),
-                        ),
+                        decoration:
+                            _buildInputDecoration(
+                              '••••••••',
+                              Icons.lock_outline,
+                            ).copyWith(
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscureConfirmPassword
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                  size: 20,
+                                ),
+                                onPressed: () => setState(
+                                  () => _obscureConfirmPassword =
+                                      !_obscureConfirmPassword,
+                                ),
+                              ),
+                            ),
                         validator: (value) {
                           if (value != _passwordController.text) {
                             return 'Les mots de passe ne correspondent pas';
@@ -900,15 +1198,21 @@ class _RegisterPageState extends State<RegisterPage> {
                             child: Checkbox(
                               value: _acceptTerms,
                               activeColor: AppColors.primaire,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                              onChanged: (val) => setState(() => _acceptTerms = val ?? false),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              onChanged: (val) =>
+                                  setState(() => _acceptTerms = val ?? false),
                             ),
                           ),
                           const SizedBox(width: 8),
                           const Expanded(
                             child: Text(
                               'J\'accepte la charte de covoiturage étudiant et les CGU',
-                              style: TextStyle(fontSize: 12, color: AppColors.texte2),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: AppColors.texte2,
+                              ),
                             ),
                           ),
                         ],
@@ -953,7 +1257,10 @@ class _RegisterPageState extends State<RegisterPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text('Déjà un compte ? ', style: TextStyle(color: AppColors.texte2, fontSize: 13)),
+                  const Text(
+                    'Déjà un compte ? ',
+                    style: TextStyle(color: AppColors.texte2, fontSize: 13),
+                  ),
                   GestureDetector(
                     onTap: () => Navigator.of(context).pop(),
                     child: const Text(
@@ -1041,7 +1348,9 @@ class _RoleCard extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                color: isSelected ? AppColors.primaire : const Color(0xFF374151),
+                color: isSelected
+                    ? AppColors.primaire
+                    : const Color(0xFF374151),
               ),
             ),
           ],

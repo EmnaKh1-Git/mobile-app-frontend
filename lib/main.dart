@@ -37,18 +37,18 @@ class CovoiturageApp extends StatelessWidget {
           seedColor: AppColors.primaire,
           primary: AppColors.primaire,
           secondary: AppColors.accent,
-          surface: const Color(0xFFF9FAFB),
+          surface: AppColors.fond,
         ),
-        scaffoldBackgroundColor: const Color(0xFFF9FAFB),
+        scaffoldBackgroundColor: AppColors.fond,
         appBarTheme: const AppBarTheme(
           elevation: 0,
           backgroundColor: Colors.white,
-          foregroundColor: Color(0xFF1F2937),
+          foregroundColor: AppColors.texte,
           centerTitle: true,
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primaire,
+            backgroundColor: AppColors.accent,
             foregroundColor: Colors.white,
             elevation: 0,
             shape: RoundedRectangleBorder(
@@ -58,7 +58,7 @@ class CovoiturageApp extends StatelessWidget {
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: const Color(0xFFF9FAFB),
+          fillColor: Colors.white,
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 14,

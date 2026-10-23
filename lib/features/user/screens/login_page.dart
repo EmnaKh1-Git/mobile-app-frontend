@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../../app/theme.dart';
 import '../services/user_service.dart';
 import '../../../screens/accueil_page.dart';
@@ -40,9 +41,11 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_captchaKey.currentState != null && !_captchaKey.currentState!.validate()) {
+    if (_captchaKey.currentState != null &&
+        !_captchaKey.currentState!.validate()) {
       setState(() {
-        _errorMessage = 'Code de sécurité anti-robot incorrect. Veuillez réessayer.';
+        _errorMessage =
+            'Code de sécurité anti-robot incorrect. Veuillez réessayer.';
       });
       _captchaKey.currentState?.refresh();
       return;
@@ -120,11 +123,14 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: AppColors.fond,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24.0,
+              vertical: 12.0,
+            ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -134,8 +140,12 @@ class _LoginPageState extends State<LoginPage> {
                     width: 76,
                     height: 76,
                     decoration: BoxDecoration(
-                      color: AppColors.primaire,
-                      borderRadius: BorderRadius.circular(20),
+                      gradient: const LinearGradient(
+                        colors: [AppColors.primaire, AppColors.accent],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(24),
                       boxShadow: [
                         BoxShadow(
                           color: AppColors.primaire.withValues(alpha: 0.3),
@@ -153,23 +163,20 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  'Covoiturage Étudiant',
+                  'Bienvenue',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF1F2937),
+                    color: AppColors.primaire,
                     letterSpacing: -0.5,
                   ),
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Connectez-vous avec vos identifiants universitaires',
+                  'Connectez-vous pour continuer',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.texte2,
-                  ),
+                  style: TextStyle(fontSize: 13, color: AppColors.texte2),
                 ),
                 const SizedBox(height: 24),
 
@@ -183,12 +190,19 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.error_outline, color: Colors.red[700], size: 20),
+                        Icon(
+                          Icons.error_outline,
+                          color: Colors.red[700],
+                          size: 20,
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
                             _errorMessage!,
-                            style: TextStyle(color: Colors.red[700], fontSize: 13),
+                            style: TextStyle(
+                              color: Colors.red[700],
+                              fontSize: 13,
+                            ),
                           ),
                         ),
                       ],
@@ -209,7 +223,7 @@ class _LoginPageState extends State<LoginPage> {
                         offset: const Offset(0, 4),
                       ),
                     ],
-                    border: Border.all(color: AppColors.bordure),
+                    border: Border.all(color: Colors.white),
                   ),
                   child: Form(
                     key: _formKey,
@@ -217,7 +231,7 @@ class _LoginPageState extends State<LoginPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         const Text(
-                          'Email universitaire',
+                          'Email ou téléphone',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -230,9 +244,19 @@ class _LoginPageState extends State<LoginPage> {
                           keyboardType: TextInputType.emailAddress,
                           decoration: const InputDecoration(
                             hintText: 'exemple@esprit.tn',
-                            hintStyle: TextStyle(color: Colors.grey, fontSize: 13),
-                            prefixIcon: Icon(Icons.school_outlined, color: AppColors.primaire, size: 20),
-                            contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            hintStyle: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 13,
+                            ),
+                            prefixIcon: Icon(
+                              Icons.person_outline,
+                              color: AppColors.accent,
+                              size: 20,
+                            ),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
@@ -260,11 +284,20 @@ class _LoginPageState extends State<LoginPage> {
                           obscureText: _obscurePassword,
                           decoration: InputDecoration(
                             hintText: '••••••••',
-                            hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
-                            prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.primaire, size: 20),
+                            hintStyle: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 13,
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.lock_outline_rounded,
+                              color: AppColors.accent,
+                              size: 20,
+                            ),
                             suffixIcon: IconButton(
                               icon: Icon(
-                                _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                                _obscurePassword
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
                                 color: Colors.grey[600],
                                 size: 20,
                               ),
@@ -274,7 +307,10 @@ class _LoginPageState extends State<LoginPage> {
                                 });
                               },
                             ),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
                           ),
                           validator: (value) {
                             if (value == null || value.isEmpty) {
@@ -309,7 +345,10 @@ class _LoginPageState extends State<LoginPage> {
                                 const SizedBox(width: 8),
                                 const Text(
                                   'Se souvenir',
-                                  style: TextStyle(fontSize: 12, color: AppColors.texte2),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.texte2,
+                                  ),
                                 ),
                               ],
                             ),
@@ -317,7 +356,8 @@ class _LoginPageState extends State<LoginPage> {
                               onPressed: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
-                                    builder: (context) => const ForgotPasswordPage(),
+                                    builder: (context) =>
+                                        const ForgotPasswordPage(),
                                   ),
                                 );
                               },
@@ -348,7 +388,7 @@ class _LoginPageState extends State<LoginPage> {
                         ElevatedButton(
                           onPressed: _isLoading ? null : _handleLogin,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primaire,
+                            backgroundColor: AppColors.accent,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             elevation: 0,
@@ -378,9 +418,13 @@ class _LoginPageState extends State<LoginPage> {
 
                         Row(
                           children: [
-                            const Expanded(child: Divider(color: AppColors.bordure)),
+                            const Expanded(
+                              child: Divider(color: AppColors.bordure),
+                            ),
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
                               child: Text(
                                 'OU',
                                 style: TextStyle(
@@ -390,14 +434,18 @@ class _LoginPageState extends State<LoginPage> {
                                 ),
                               ),
                             ),
-                            const Expanded(child: Divider(color: AppColors.bordure)),
+                            const Expanded(
+                              child: Divider(color: AppColors.bordure),
+                            ),
                           ],
                         ),
 
                         const SizedBox(height: 14),
 
                         OutlinedButton(
-                          onPressed: _isGoogleLoading ? null : _handleGoogleSignIn,
+                          onPressed: _isGoogleLoading
+                              ? null
+                              : _handleGoogleSignIn,
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             side: const BorderSide(color: AppColors.bordure),
@@ -410,7 +458,9 @@ class _LoginPageState extends State<LoginPage> {
                               ? const SizedBox(
                                   height: 18,
                                   width: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
