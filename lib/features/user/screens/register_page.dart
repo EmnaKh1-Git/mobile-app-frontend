@@ -50,8 +50,42 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _acceptTerms = false;
   bool _isLoading = false;
   String? _errorMessage;
+  int _currentStep = 0;
 
   final _userService = UserService.instance;
+
+  void _goToStep(int step) {
+    if (step < 0 || step > 2) return;
+    setState(() {
+      _currentStep = step;
+      _errorMessage = null;
+    });
+  }
+
+  bool _validateCurrentStep() {
+    if (_currentStep == 0) {
+      if (_prenomController.text.trim().isEmpty ||
+          _nomController.text.trim().isEmpty ||
+          _emailController.text.trim().isEmpty ||
+          !_emailController.text.contains('@') ||
+          _phoneController.text.trim().length < 8) {
+        setState(
+          () => _errorMessage =
+              'Veuillez compléter vos informations personnelles.',
+        );
+        return false;
+      }
+    } else if (_currentStep == 2) {
+      if (!_formKey.currentState!.validate()) return false;
+    }
+    return true;
+  }
+
+  void _nextStep() {
+    if (_validateCurrentStep()) {
+      _goToStep(_currentStep + 1);
+    }
+  }
 
   @override
   void dispose() {
@@ -393,7 +427,7 @@ class _RegisterPageState extends State<RegisterPage> {
         foregroundColor: AppColors.primaire,
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
+        child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -414,6 +448,38 @@ class _RegisterPageState extends State<RegisterPage> {
                 style: TextStyle(fontSize: 13, color: AppColors.texte2),
               ),
               const SizedBox(height: 18),
+              Row(
+                children: List.generate(3, (index) {
+                  final active = index <= _currentStep;
+                  return Expanded(
+                    child: Container(
+                      height: 5,
+                      margin: EdgeInsets.only(right: index == 2 ? 0 : 6),
+                      decoration: BoxDecoration(
+                        color: active
+                            ? AppColors.accent
+                            : AppColors.soutien.withValues(alpha: 0.35),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                [
+                  'Informations personnelles',
+                  'Autres informations',
+                  'Sécurité du compte',
+                ][_currentStep],
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppColors.primaire,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 12),
 
               if (_errorMessage != null) ...[
                 Container(
@@ -460,173 +526,268 @@ class _RegisterPageState extends State<RegisterPage> {
                   ],
                   border: Border.all(color: Colors.white),
                 ),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Center(
-                        child: Column(
-                          children: [
-                            UserAvatarView(
-                              user: previewUser,
-                              radius: 36,
-                              showCameraBadge: true,
-                              onTap: _showAvatarPickerModal,
-                            ),
-                            const SizedBox(height: 8),
-                            InkWell(
-                              onTap: _showAvatarPickerModal,
-                              child: const Text(
-                                'Choisir ma photo / avatar',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.primaire,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      const Text(
-                        'Vous êtes :',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF374151),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _RoleCard(
-                              title: 'Passager',
-                              icon: Icons.person_outline_rounded,
-                              isSelected: _selectedRole == UserRole.passager,
-                              onTap: () => setState(
-                                () => _selectedRole = UserRole.passager,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _RoleCard(
-                              title: 'Conducteur',
-                              icon: Icons.directions_car_outlined,
-                              isSelected: _selectedRole == UserRole.conducteur,
-                              onTap: () => setState(
-                                () => _selectedRole = UserRole.conducteur,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-
-                      Row(
-                        children: [
-                          Expanded(
+                child: GestureDetector(
+                  onHorizontalDragEnd: (details) {
+                    final velocity = details.primaryVelocity ?? 0;
+                    if (velocity < -300) {
+                      _nextStep();
+                    } else if (velocity > 300 && _currentStep > 0) {
+                      _goToStep(_currentStep - 1);
+                    }
+                  },
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (_currentStep == 0) ...[
+                          Center(
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'Prénom',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                UserAvatarView(
+                                  user: previewUser,
+                                  radius: 36,
+                                  showCameraBadge: true,
+                                  onTap: _showAvatarPickerModal,
                                 ),
-                                const SizedBox(height: 6),
-                                TextFormField(
-                                  controller: _prenomController,
-                                  decoration: _buildInputDecoration(
-                                    'Prénom',
-                                    Icons.person_outline,
+                                const SizedBox(height: 8),
+                                InkWell(
+                                  onTap: _showAvatarPickerModal,
+                                  child: const Text(
+                                    'Choisir ma photo / avatar',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.primaire,
+                                    ),
                                   ),
-                                  validator: (v) =>
-                                      (v == null || v.trim().isEmpty)
-                                      ? 'Requis'
-                                      : null,
                                 ),
                               ],
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Nom',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                TextFormField(
-                                  controller: _nomController,
-                                  decoration: _buildInputDecoration(
-                                    'Nom',
-                                    Icons.badge_outlined,
-                                  ),
-                                  validator: (v) =>
-                                      (v == null || v.trim().isEmpty)
-                                      ? 'Requis'
-                                      : null,
-                                ),
-                              ],
+                          const SizedBox(height: 16),
+
+                          const Text(
+                            'Vous êtes :',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF374151),
                             ),
                           ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _RoleCard(
+                                  title: 'Passager',
+                                  icon: Icons.person_outline_rounded,
+                                  isSelected:
+                                      _selectedRole == UserRole.passager,
+                                  onTap: () => setState(
+                                    () => _selectedRole = UserRole.passager,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _RoleCard(
+                                  title: 'Conducteur',
+                                  icon: Icons.directions_car_outlined,
+                                  isSelected:
+                                      _selectedRole == UserRole.conducteur,
+                                  onTap: () => setState(
+                                    () => _selectedRole = UserRole.conducteur,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 18),
+
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Prénom',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    TextFormField(
+                                      controller: _prenomController,
+                                      decoration: _buildInputDecoration(
+                                        'Prénom',
+                                        Icons.person_outline,
+                                      ),
+                                      validator: (v) =>
+                                          (v == null || v.trim().isEmpty)
+                                          ? 'Requis'
+                                          : null,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Nom',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    TextFormField(
+                                      controller: _nomController,
+                                      decoration: _buildInputDecoration(
+                                        'Nom',
+                                        Icons.badge_outlined,
+                                      ),
+                                      validator: (v) =>
+                                          (v == null || v.trim().isEmpty)
+                                          ? 'Requis'
+                                          : null,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+
+                          const Text(
+                            'Email universitaire',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: _buildInputDecoration(
+                              'prenom.nom@esprit.tn',
+                              Icons.school_outlined,
+                            ),
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Veuillez saisir votre email';
+                              }
+                              if (!value.contains('@')) {
+                                return 'Format d\'email invalide';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 14),
+
+                          const Text(
+                            'Numéro de téléphone',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                height: 48,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF9FAFB),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: AppColors.bordure),
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<String>(
+                                    value: _selectedCountryCode,
+                                    icon: const Icon(
+                                      Icons.arrow_drop_down,
+                                      size: 20,
+                                    ),
+                                    items: kCountryCodes.map((country) {
+                                      return DropdownMenuItem<String>(
+                                        value: country.code,
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              country.flag,
+                                              style: const TextStyle(
+                                                fontSize: 18,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              country.code,
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                                    onChanged: (val) {
+                                      if (val != null)
+                                        setState(
+                                          () => _selectedCountryCode = val,
+                                        );
+                                    },
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _phoneController,
+                                  keyboardType: TextInputType.phone,
+                                  decoration: _buildInputDecoration(
+                                    '20 123 456',
+                                    Icons.phone_android_outlined,
+                                  ),
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) {
+                                      return 'Téléphone requis';
+                                    }
+                                    if (value.trim().length < 8) {
+                                      return 'Numéro trop court';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
                         ],
-                      ),
-                      const SizedBox(height: 14),
 
-                      const Text(
-                        'Email universitaire',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: _buildInputDecoration(
-                          'prenom.nom@esprit.tn',
-                          Icons.school_outlined,
-                        ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Veuillez saisir votre email';
-                          }
-                          if (!value.contains('@')) {
-                            return 'Format d\'email invalide';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 14),
-
-                      const Text(
-                        'Numéro de téléphone',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+                        if (_currentStep == 1) ...[
+                          const Text(
+                            'Gouvernorat (24 régions de Tunisie)',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
                           Container(
-                            height: 48,
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
                             decoration: BoxDecoration(
                               color: const Color(0xFFF9FAFB),
                               borderRadius: BorderRadius.circular(12),
@@ -634,620 +795,588 @@ class _RegisterPageState extends State<RegisterPage> {
                             ),
                             child: DropdownButtonHideUnderline(
                               child: DropdownButton<String>(
-                                value: _selectedCountryCode,
-                                icon: const Icon(
-                                  Icons.arrow_drop_down,
-                                  size: 20,
-                                ),
-                                items: kCountryCodes.map((country) {
+                                isExpanded: true,
+                                value:
+                                    kTunisianGovernoratesAndUniversities
+                                        .containsKey(_selectedGouvernorat)
+                                    ? _selectedGouvernorat
+                                    : 'Tunis',
+                                items: kTunisianGovernoratesAndUniversities.keys
+                                    .map((gov) {
+                                      return DropdownMenuItem<String>(
+                                        value: gov,
+                                        child: Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.location_on_outlined,
+                                              size: 18,
+                                              color: AppColors.primaire,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              gov,
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    })
+                                    .toList(),
+                                onChanged: _onGouvernoratChanged,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          const Text(
+                            'Université / Faculté',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF9FAFB),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppColors.bordure),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                isExpanded: true,
+                                value:
+                                    universitesDisponibles.contains(
+                                      _selectedUniversite,
+                                    )
+                                    ? _selectedUniversite
+                                    : (universitesDisponibles.isNotEmpty
+                                          ? universitesDisponibles.first
+                                          : null),
+                                items: universitesDisponibles.map((univ) {
                                   return DropdownMenuItem<String>(
-                                    value: country.code,
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          country.flag,
-                                          style: const TextStyle(fontSize: 18),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          country.code,
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
+                                    value: univ,
+                                    child: Text(
+                                      univ,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   );
                                 }).toList(),
                                 onChanged: (val) {
                                   if (val != null)
-                                    setState(() => _selectedCountryCode = val);
+                                    setState(() => _selectedUniversite = val);
                                 },
                               ),
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: TextFormField(
-                              controller: _phoneController,
-                              keyboardType: TextInputType.phone,
-                              decoration: _buildInputDecoration(
-                                '20 123 456',
-                                Icons.phone_android_outlined,
-                              ),
-                              validator: (value) {
-                                if (value == null || value.trim().isEmpty) {
-                                  return 'Téléphone requis';
-                                }
-                                if (value.trim().length < 8) {
-                                  return 'Numéro trop court';
-                                }
-                                return null;
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
+                          const SizedBox(height: 16),
 
-                      const Text(
-                        'Gouvernorat (24 régions de Tunisie)',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF9FAFB),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.bordure),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            isExpanded: true,
-                            value:
-                                kTunisianGovernoratesAndUniversities
-                                    .containsKey(_selectedGouvernorat)
-                                ? _selectedGouvernorat
-                                : 'Tunis',
-                            items: kTunisianGovernoratesAndUniversities.keys
-                                .map((gov) {
-                                  return DropdownMenuItem<String>(
-                                    value: gov,
-                                    child: Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.location_on_outlined,
-                                          size: 18,
+                          if (_selectedRole == UserRole.conducteur) ...[
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: AppColors.primaireDoux.withValues(
+                                  alpha: 0.4,
+                                ),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: AppColors.primaire.withValues(
+                                    alpha: 0.2,
+                                  ),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Row(
+                                    children: [
+                                      Icon(
+                                        Icons.directions_car_filled_rounded,
+                                        color: AppColors.primaire,
+                                        size: 20,
+                                      ),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'Détails du véhicule (Conducteur)',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
                                           color: AppColors.primaire,
                                         ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          gov,
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                })
-                                .toList(),
-                            onChanged: _onGouvernoratChanged,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-
-                      const Text(
-                        'Université / Faculté',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF9FAFB),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.bordure),
-                        ),
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            isExpanded: true,
-                            value:
-                                universitesDisponibles.contains(
-                                  _selectedUniversite,
-                                )
-                                ? _selectedUniversite
-                                : (universitesDisponibles.isNotEmpty
-                                      ? universitesDisponibles.first
-                                      : null),
-                            items: universitesDisponibles.map((univ) {
-                              return DropdownMenuItem<String>(
-                                value: univ,
-                                child: Text(
-                                  univ,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
+                                      ),
+                                    ],
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              );
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val != null)
-                                setState(() => _selectedUniversite = val);
-                            },
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
+                                  const SizedBox(height: 12),
 
-                      if (_selectedRole == UserRole.conducteur) ...[
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: AppColors.primaireDoux.withValues(
-                              alpha: 0.4,
-                            ),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: AppColors.primaire.withValues(alpha: 0.2),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Row(
-                                children: [
-                                  Icon(
-                                    Icons.directions_car_filled_rounded,
-                                    color: AppColors.primaire,
-                                    size: 20,
-                                  ),
-                                  SizedBox(width: 8),
-                                  Text(
-                                    'Détails du véhicule (Conducteur)',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.primaire,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Marque',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white,
-                                            borderRadius: BorderRadius.circular(
-                                              10,
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Marque',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
                                             ),
-                                            border: Border.all(
-                                              color: AppColors.bordure,
+                                            const SizedBox(height: 4),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                border: Border.all(
+                                                  color: AppColors.bordure,
+                                                ),
+                                              ),
+                                              child: DropdownButtonHideUnderline(
+                                                child: DropdownButton<String>(
+                                                  isExpanded: true,
+                                                  value:
+                                                      kCarBrandsAndModels
+                                                          .containsKey(
+                                                            _selectedMarque,
+                                                          )
+                                                      ? _selectedMarque
+                                                      : 'Peugeot',
+                                                  items: kCarBrandsAndModels
+                                                      .keys
+                                                      .map((b) {
+                                                        return DropdownMenuItem(
+                                                          value: b,
+                                                          child: Text(
+                                                            b,
+                                                            style:
+                                                                const TextStyle(
+                                                                  fontSize: 13,
+                                                                ),
+                                                          ),
+                                                        );
+                                                      })
+                                                      .toList(),
+                                                  onChanged: _onMarqueChanged,
+                                                ),
+                                              ),
                                             ),
-                                          ),
-                                          child: DropdownButtonHideUnderline(
-                                            child: DropdownButton<String>(
-                                              isExpanded: true,
-                                              value:
-                                                  kCarBrandsAndModels
-                                                      .containsKey(
-                                                        _selectedMarque,
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Modèle',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                border: Border.all(
+                                                  color: AppColors.bordure,
+                                                ),
+                                              ),
+                                              child: DropdownButtonHideUnderline(
+                                                child: DropdownButton<String>(
+                                                  isExpanded: true,
+                                                  value:
+                                                      modelesDisponibles
+                                                          .contains(
+                                                            _selectedModele,
+                                                          )
+                                                      ? _selectedModele
+                                                      : (modelesDisponibles
+                                                                .isNotEmpty
+                                                            ? modelesDisponibles
+                                                                  .first
+                                                            : null),
+                                                  items: modelesDisponibles.map(
+                                                    (m) {
+                                                      return DropdownMenuItem(
+                                                        value: m,
+                                                        child: Text(
+                                                          m,
+                                                          style:
+                                                              const TextStyle(
+                                                                fontSize: 13,
+                                                              ),
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                        ),
+                                                      );
+                                                    },
+                                                  ).toList(),
+                                                  onChanged: (val) {
+                                                    if (val != null)
+                                                      setState(
+                                                        () => _selectedModele =
+                                                            val,
+                                                      );
+                                                  },
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Couleur',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                border: Border.all(
+                                                  color: AppColors.bordure,
+                                                ),
+                                              ),
+                                              child: DropdownButtonHideUnderline(
+                                                child: DropdownButton<String>(
+                                                  isExpanded: true,
+                                                  value:
+                                                      kCarColors.contains(
+                                                        _selectedCouleur,
                                                       )
-                                                  ? _selectedMarque
-                                                  : 'Peugeot',
-                                              items: kCarBrandsAndModels.keys
-                                                  .map((b) {
+                                                      ? _selectedCouleur
+                                                      : 'Noir',
+                                                  items: kCarColors.map((c) {
                                                     return DropdownMenuItem(
-                                                      value: b,
+                                                      value: c,
                                                       child: Text(
-                                                        b,
+                                                        c,
                                                         style: const TextStyle(
                                                           fontSize: 13,
                                                         ),
                                                       ),
                                                     );
-                                                  })
-                                                  .toList(),
-                                              onChanged: _onMarqueChanged,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Modèle',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white,
-                                            borderRadius: BorderRadius.circular(
-                                              10,
-                                            ),
-                                            border: Border.all(
-                                              color: AppColors.bordure,
-                                            ),
-                                          ),
-                                          child: DropdownButtonHideUnderline(
-                                            child: DropdownButton<String>(
-                                              isExpanded: true,
-                                              value:
-                                                  modelesDisponibles.contains(
-                                                    _selectedModele,
-                                                  )
-                                                  ? _selectedModele
-                                                  : (modelesDisponibles
-                                                            .isNotEmpty
-                                                        ? modelesDisponibles
-                                                              .first
-                                                        : null),
-                                              items: modelesDisponibles.map((
-                                                m,
-                                              ) {
-                                                return DropdownMenuItem(
-                                                  value: m,
-                                                  child: Text(
-                                                    m,
-                                                    style: const TextStyle(
-                                                      fontSize: 13,
-                                                    ),
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                                );
-                                              }).toList(),
-                                              onChanged: (val) {
-                                                if (val != null)
-                                                  setState(
-                                                    () => _selectedModele = val,
-                                                  );
-                                              },
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Couleur',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 10,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white,
-                                            borderRadius: BorderRadius.circular(
-                                              10,
-                                            ),
-                                            border: Border.all(
-                                              color: AppColors.bordure,
-                                            ),
-                                          ),
-                                          child: DropdownButtonHideUnderline(
-                                            child: DropdownButton<String>(
-                                              isExpanded: true,
-                                              value:
-                                                  kCarColors.contains(
-                                                    _selectedCouleur,
-                                                  )
-                                                  ? _selectedCouleur
-                                                  : 'Noir',
-                                              items: kCarColors.map((c) {
-                                                return DropdownMenuItem(
-                                                  value: c,
-                                                  child: Text(
-                                                    c,
-                                                    style: const TextStyle(
-                                                      fontSize: 13,
-                                                    ),
-                                                  ),
-                                                );
-                                              }).toList(),
-                                              onChanged: (val) {
-                                                if (val != null)
-                                                  setState(
-                                                    () =>
-                                                        _selectedCouleur = val,
-                                                  );
-                                              },
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Immatriculation',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        TextFormField(
-                                          controller:
-                                              _immatriculationController,
-                                          decoration: _buildInputDecoration(
-                                            '220 TUN 1234',
-                                            Icons.pin_outlined,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text(
-                                    'Places disponibles :',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  Row(
-                                    children: [1, 2, 3, 4].map((count) {
-                                      final isSel = _placesDisponibles == count;
-                                      return Padding(
-                                        padding: const EdgeInsets.only(left: 6),
-                                        child: InkWell(
-                                          onTap: () => setState(
-                                            () => _placesDisponibles = count,
-                                          ),
-                                          child: Container(
-                                            width: 32,
-                                            height: 32,
-                                            decoration: BoxDecoration(
-                                              color: isSel
-                                                  ? AppColors.primaire
-                                                  : Colors.white,
-                                              shape: BoxShape.circle,
-                                              border: Border.all(
-                                                color: isSel
-                                                    ? AppColors.primaire
-                                                    : AppColors.bordure,
-                                              ),
-                                            ),
-                                            child: Center(
-                                              child: Text(
-                                                '$count',
-                                                style: TextStyle(
-                                                  color: isSel
-                                                      ? Colors.white
-                                                      : const Color(0xFF374151),
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 12,
+                                                  }).toList(),
+                                                  onChanged: (val) {
+                                                    if (val != null)
+                                                      setState(
+                                                        () => _selectedCouleur =
+                                                            val,
+                                                      );
+                                                  },
                                                 ),
                                               ),
                                             ),
-                                          ),
+                                          ],
                                         ),
-                                      );
-                                    }).toList(),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Immatriculation',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            TextFormField(
+                                              controller:
+                                                  _immatriculationController,
+                                              decoration: _buildInputDecoration(
+                                                '220 TUN 1234',
+                                                Icons.pin_outlined,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text(
+                                        'Places disponibles :',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Row(
+                                        children: [1, 2, 3, 4].map((count) {
+                                          final isSel =
+                                              _placesDisponibles == count;
+                                          return Padding(
+                                            padding: const EdgeInsets.only(
+                                              left: 6,
+                                            ),
+                                            child: InkWell(
+                                              onTap: () => setState(
+                                                () =>
+                                                    _placesDisponibles = count,
+                                              ),
+                                              child: Container(
+                                                width: 32,
+                                                height: 32,
+                                                decoration: BoxDecoration(
+                                                  color: isSel
+                                                      ? AppColors.primaire
+                                                      : Colors.white,
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: isSel
+                                                        ? AppColors.primaire
+                                                        : AppColors.bordure,
+                                                  ),
+                                                ),
+                                                child: Center(
+                                                  child: Text(
+                                                    '$count',
+                                                    style: TextStyle(
+                                                      color: isSel
+                                                          ? Colors.white
+                                                          : const Color(
+                                                              0xFF374151,
+                                                            ),
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }).toList(),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+                        ],
+
+                        if (_currentStep == 2) ...[
+                          const Text(
+                            'Mot de passe',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _passwordController,
+                            obscureText: _obscurePassword,
+                            decoration:
+                                _buildInputDecoration(
+                                  '••••••••',
+                                  Icons.lock_outline,
+                                ).copyWith(
+                                  suffixIcon: IconButton(
+                                    icon: Icon(
+                                      _obscurePassword
+                                          ? Icons.visibility_off_outlined
+                                          : Icons.visibility_outlined,
+                                      size: 20,
+                                    ),
+                                    onPressed: () => setState(
+                                      () =>
+                                          _obscurePassword = !_obscurePassword,
+                                    ),
+                                  ),
+                                ),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) {
+                                return 'Veuillez choisir un mot de passe';
+                              }
+                              if (value.length < 6) {
+                                return 'Minimum 6 caractères';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 14),
+
+                          const Text(
+                            'Confirmer le mot de passe',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          TextFormField(
+                            controller: _confirmPasswordController,
+                            obscureText: _obscureConfirmPassword,
+                            decoration:
+                                _buildInputDecoration(
+                                  '••••••••',
+                                  Icons.lock_outline,
+                                ).copyWith(
+                                  suffixIcon: IconButton(
+                                    icon: Icon(
+                                      _obscureConfirmPassword
+                                          ? Icons.visibility_off_outlined
+                                          : Icons.visibility_outlined,
+                                      size: 20,
+                                    ),
+                                    onPressed: () => setState(
+                                      () => _obscureConfirmPassword =
+                                          !_obscureConfirmPassword,
+                                    ),
+                                  ),
+                                ),
+                            validator: (value) {
+                              if (value != _passwordController.text) {
+                                return 'Les mots de passe ne correspondent pas';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 14),
+
+                          CaptchaWidget(
+                            key: _captchaKey,
+                            controller: _captchaController,
+                          ),
+                          const SizedBox(height: 12),
+
+                          Row(
+                            children: [
+                              SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: Checkbox(
+                                  value: _acceptTerms,
+                                  activeColor: AppColors.primaire,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  onChanged: (val) => setState(
+                                    () => _acceptTerms = val ?? false,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text(
+                                  'J\'accepte la charte de covoiturage étudiant et les CGU',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.texte2,
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 14),
-                      ],
+                          const SizedBox(height: 18),
 
-                      const Text(
-                        'Mot de passe',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        controller: _passwordController,
-                        obscureText: _obscurePassword,
-                        decoration:
-                            _buildInputDecoration(
-                              '••••••••',
-                              Icons.lock_outline,
-                            ).copyWith(
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _obscurePassword
-                                      ? Icons.visibility_off_outlined
-                                      : Icons.visibility_outlined,
-                                  size: 20,
-                                ),
-                                onPressed: () => setState(
-                                  () => _obscurePassword = !_obscurePassword,
-                                ),
-                              ),
-                            ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Veuillez choisir un mot de passe';
-                          }
-                          if (value.length < 6) {
-                            return 'Minimum 6 caractères';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 14),
-
-                      const Text(
-                        'Confirmer le mot de passe',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      TextFormField(
-                        controller: _confirmPasswordController,
-                        obscureText: _obscureConfirmPassword,
-                        decoration:
-                            _buildInputDecoration(
-                              '••••••••',
-                              Icons.lock_outline,
-                            ).copyWith(
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _obscureConfirmPassword
-                                      ? Icons.visibility_off_outlined
-                                      : Icons.visibility_outlined,
-                                  size: 20,
-                                ),
-                                onPressed: () => setState(
-                                  () => _obscureConfirmPassword =
-                                      !_obscureConfirmPassword,
-                                ),
-                              ),
-                            ),
-                        validator: (value) {
-                          if (value != _passwordController.text) {
-                            return 'Les mots de passe ne correspondent pas';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 14),
-
-                      CaptchaWidget(
-                        key: _captchaKey,
-                        controller: _captchaController,
-                      ),
-                      const SizedBox(height: 12),
-
-                      Row(
-                        children: [
-                          SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: Checkbox(
-                              value: _acceptTerms,
-                              activeColor: AppColors.primaire,
+                          ElevatedButton(
+                            onPressed: _isLoading ? null : _handleRegister,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primaire,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              elevation: 0,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              onChanged: (val) =>
-                                  setState(() => _acceptTerms = val ?? false),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Expanded(
-                            child: Text(
-                              'J\'accepte la charte de covoiturage étudiant et les CGU',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.texte2,
+                                borderRadius: BorderRadius.circular(12),
                               ),
                             ),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Créer mon compte',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 18),
 
-                      ElevatedButton(
-                        onPressed: _isLoading ? null : _handleRegister,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primaire,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: _isLoading
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: Colors.white,
+                        if (_currentStep < 2) ...[
+                          const SizedBox(height: 18),
+                          Row(
+                            children: [
+                              if (_currentStep > 0)
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: () =>
+                                        _goToStep(_currentStep - 1),
+                                    child: const Text('Précédent'),
+                                  ),
                                 ),
-                              )
-                            : const Text(
-                                'Créer mon compte',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
+                              if (_currentStep > 0) const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _nextStep,
+                                  child: const Text('Continuer'),
                                 ),
                               ),
-                      ),
-                    ],
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ),
