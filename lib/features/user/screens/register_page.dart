@@ -8,6 +8,8 @@ import '../services/user_service.dart';
 import '../../../screens/accueil_page.dart';
 import 'widgets/captcha_widget.dart';
 import 'widgets/user_avatar_view.dart';
+import 'widgets/google_sign_in_modal.dart';
+import 'widgets/auth_map_background.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -49,6 +51,7 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _obscureConfirmPassword = true;
   bool _acceptTerms = false;
   bool _isLoading = false;
+  bool _isGoogleLoading = false;
   String? _errorMessage;
   int _currentStep = 0;
 
@@ -71,7 +74,7 @@ class _RegisterPageState extends State<RegisterPage> {
           _phoneController.text.trim().length < 8) {
         setState(
           () => _errorMessage =
-              'Veuillez compléter vos informations personnelles.',
+              'Veuillez compléter vos informations personnelles obligatoires.',
         );
         return false;
       }
@@ -139,7 +142,7 @@ class _RegisterPageState extends State<RegisterPage> {
               content: Text(
                 'Photo sélectionnée avec succès depuis votre appareil !',
               ),
-              backgroundColor: Color(0xFF10B981),
+              backgroundColor: AppColors.primaire,
             ),
           );
         }
@@ -222,15 +225,18 @@ class _RegisterPageState extends State<RegisterPage> {
             children: [
               const Text(
                 'Choisir votre photo / avatar de profil',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primaire,
+                ),
               ),
               const SizedBox(height: 6),
               const Text(
-                'Parcourez les photos de votre ordinateur ou choisissez un avatar étudiant :',
+                'Parcourez les photos de votre appareil ou choisissez un avatar étudiant :',
                 style: TextStyle(fontSize: 12, color: AppColors.texte2),
               ),
               const SizedBox(height: 16),
-
               ElevatedButton.icon(
                 onPressed: () {
                   Navigator.of(ctx).pop();
@@ -238,7 +244,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 },
                 icon: const Icon(Icons.drive_folder_upload_rounded, size: 20),
                 label: const Text(
-                  '📁 Parcourir mes photos (Ordinateur / Téléphone)',
+                  '📁 Parcourir mes photos (Téléphone / PC)',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                 ),
                 style: ElevatedButton.styleFrom(
@@ -246,14 +252,13 @@ class _RegisterPageState extends State<RegisterPage> {
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
               ),
               const SizedBox(height: 20),
-
               const Text(
-                'Ou choisir un avatar de profil :',
+                'Ou choisir un avatar étudiant :',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -327,7 +332,7 @@ class _RegisterPageState extends State<RegisterPage> {
           content: Text(
             'Veuillez accepter la charte et les conditions d\'utilisation.',
           ),
-          backgroundColor: Colors.orange,
+          backgroundColor: AppColors.alerte,
         ),
       );
       return;
@@ -379,7 +384,7 @@ class _RegisterPageState extends State<RegisterPage> {
           content: Text(
             'Compte créé avec succès ! Bienvenue sur Covoiturage Étudiant.',
           ),
-          backgroundColor: Colors.green,
+          backgroundColor: AppColors.primaire,
         ),
       );
       Navigator.of(context).pushAndRemoveUntil(
@@ -392,6 +397,41 @@ class _RegisterPageState extends State<RegisterPage> {
             _userService.errorMessage ?? 'Erreur lors de l\'inscription.';
       });
       _captchaKey.currentState?.refresh();
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    final account = await GoogleSignInModal.show(context);
+    if (account == null) return;
+
+    setState(() {
+      _isGoogleLoading = true;
+      _errorMessage = null;
+    });
+
+    final success = await _userService.loginWithGoogleAccount(
+      email: account.email,
+      prenom: account.prenom,
+      nom: account.nom,
+      avatarId: account.avatarId,
+      fullUser: account.fullUser,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _isGoogleLoading = false;
+    });
+
+    if (success) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const AccueilPage()),
+        (route) => false,
+      );
+    } else {
+      setState(() {
+        _errorMessage = 'Échec de la connexion avec Google.';
+      });
     }
   }
 
@@ -415,195 +455,485 @@ class _RegisterPageState extends State<RegisterPage> {
     );
 
     return Scaffold(
-      backgroundColor: AppColors.fond,
-      appBar: AppBar(
-        title: const Text(
-          'Créer un compte',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        foregroundColor: AppColors.primaire,
-      ),
+      backgroundColor: Colors.white,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Rejoignez la communauté étudiante',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primaire,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Partagez vos trajets universitaires en toute sécurité',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: AppColors.texte2),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: List.generate(3, (index) {
-                  final active = index <= _currentStep;
-                  return Expanded(
-                    child: Container(
-                      height: 5,
-                      margin: EdgeInsets.only(right: index == 2 ? 0 : 6),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Barre supérieure avec bouton retour circulaire (Screen 3)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
                       decoration: BoxDecoration(
-                        color: active
-                            ? AppColors.accent
-                            : AppColors.soutien.withValues(alpha: 0.35),
-                        borderRadius: BorderRadius.circular(8),
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.bordure),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(50),
+                          onTap: () {
+                            if (_currentStep > 0) {
+                              _goToStep(_currentStep - 1);
+                            } else {
+                              Navigator.of(context).maybePop();
+                            }
+                          },
+                          child: const Icon(
+                            Icons.chevron_left_rounded,
+                            color: AppColors.primaire,
+                            size: 26,
+                          ),
+                        ),
                       ),
                     ),
-                  );
-                }),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                [
-                  'Informations personnelles',
-                  'Autres informations',
-                  'Sécurité du compte',
-                ][_currentStep],
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppColors.primaire,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
+                    const BotanicalLeaf(size: 40),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 12),
 
-              if (_errorMessage != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red[50],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.red[200]!),
+                const SizedBox(height: 16),
+
+                // Titre "Register" + Sous-titre (Screen 3)
+                const Text(
+                  'Register',
+                  style: TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primaire,
+                    letterSpacing: -0.6,
                   ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        color: Colors.red[700],
-                        size: 20,
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Create your new account',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    color: AppColors.texte2,
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // Barres de progression d'étapes (3 barres pilules)
+                Row(
+                  children: List.generate(3, (index) {
+                    final isActive = index <= _currentStep;
+                    return Expanded(
+                      child: Container(
+                        height: 5,
+                        margin: EdgeInsets.only(right: index == 2 ? 0 : 8),
+                        decoration: BoxDecoration(
+                          color: isActive
+                              ? AppColors.primaire
+                              : AppColors.champFond,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
-                      const SizedBox(width: 10),
+                    );
+                  }),
+                ),
+
+                const SizedBox(height: 10),
+
+                Text(
+                  [
+                    'Étape 1 sur 3 : Coordonnées',
+                    'Étape 2 sur 3 : Localisation & Véhicule',
+                    'Étape 3 sur 3 : Sécurité & Finalisation',
+                  ][_currentStep],
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.primaire,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12.5,
+                  ),
+                ),
+
+                const SizedBox(height: 18),
+
+                if (_errorMessage != null) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFDE8E8),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFF8B4B4)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.error_outline_rounded,
+                          color: Color(0xFFC81E1E),
+                          size: 19,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: const TextStyle(
+                              color: Color(0xFF9B1C1C),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // ==========================================
+                // ÉTAPE 0 : Informations personnelles & Rôle
+                // ==========================================
+                if (_currentStep == 0) ...[
+                  Center(
+                    child: Column(
+                      children: [
+                        UserAvatarView(
+                          user: previewUser,
+                          radius: 38,
+                          showCameraBadge: true,
+                          onTap: _showAvatarPickerModal,
+                        ),
+                        const SizedBox(height: 8),
+                        InkWell(
+                          onTap: _showAvatarPickerModal,
+                          child: const Text(
+                            'Changer la photo de profil',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primaire,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+
+                  const Text(
+                    'Vous êtes :',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.texte,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
                       Expanded(
-                        child: Text(
-                          _errorMessage!,
-                          style: TextStyle(
-                            color: Colors.red[700],
-                            fontSize: 13,
+                        child: _RoleCard(
+                          title: 'Passager',
+                          icon: Icons.person_rounded,
+                          isSelected: _selectedRole == UserRole.passager,
+                          onTap: () => setState(
+                            () => _selectedRole = UserRole.passager,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _RoleCard(
+                          title: 'Conducteur',
+                          icon: Icons.directions_car_rounded,
+                          isSelected: _selectedRole == UserRole.conducteur,
+                          onTap: () => setState(
+                            () => _selectedRole = UserRole.conducteur,
                           ),
                         ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 16),
-              ],
+                  const SizedBox(height: 18),
 
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 20,
-                      offset: const Offset(0, 4),
+                  // Prénom et Nom
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _prenomController,
+                          decoration: _buildPillDecoration(
+                            'Prénom',
+                            Icons.person_outline_rounded,
+                          ),
+                          validator: (v) =>
+                              (v == null || v.trim().isEmpty) ? 'Requis' : null,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _nomController,
+                          decoration: _buildPillDecoration(
+                            'Nom',
+                            Icons.badge_outlined,
+                          ),
+                          validator: (v) =>
+                              (v == null || v.trim().isEmpty) ? 'Requis' : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Email avec coche de validation (Screen 3)
+                  TextFormField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    onChanged: (_) => setState(() {}),
+                    decoration: _buildPillDecoration(
+                      'user@mail.com',
+                      Icons.mail_outline_rounded,
+                      suffix: _emailController.text.contains('@') &&
+                              _emailController.text.contains('.')
+                          ? const Icon(
+                              Icons.check_circle_rounded,
+                              color: AppColors.accent,
+                              size: 20,
+                            )
+                          : null,
                     ),
-                  ],
-                  border: Border.all(color: Colors.white),
-                ),
-                child: GestureDetector(
-                  onHorizontalDragEnd: (details) {
-                    final velocity = details.primaryVelocity ?? 0;
-                    if (velocity < -300) {
-                      _nextStep();
-                    } else if (velocity > 300 && _currentStep > 0) {
-                      _goToStep(_currentStep - 1);
-                    }
-                  },
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (_currentStep == 0) ...[
-                          Center(
-                            child: Column(
-                              children: [
-                                UserAvatarView(
-                                  user: previewUser,
-                                  radius: 36,
-                                  showCameraBadge: true,
-                                  onTap: _showAvatarPickerModal,
-                                ),
-                                const SizedBox(height: 8),
-                                InkWell(
-                                  onTap: _showAvatarPickerModal,
-                                  child: const Text(
-                                    'Choisir ma photo / avatar',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.primaire,
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Veuillez saisir votre email';
+                      }
+                      if (!value.contains('@')) {
+                        return 'Format d\'email invalide';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Téléphone avec indicatif
+                  Row(
+                    children: [
+                      Container(
+                        height: 52,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: AppColors.champFond,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _selectedCountryCode,
+                            icon: const Icon(
+                              Icons.arrow_drop_down_rounded,
+                              size: 20,
+                              color: AppColors.texte2,
+                            ),
+                            items: kCountryCodes.map((country) {
+                              return DropdownMenuItem<String>(
+                                value: country.code,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      country.flag,
+                                      style: const TextStyle(fontSize: 16),
                                     ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      country.code,
+                                      style: const TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.texte,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setState(() => _selectedCountryCode = val);
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _phoneController,
+                          keyboardType: TextInputType.phone,
+                          decoration: _buildPillDecoration(
+                            'Numéro (ex: 20 123 456)',
+                            Icons.phone_android_rounded,
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Téléphone requis';
+                            }
+                            if (value.trim().length < 8) {
+                              return 'Numéro trop court';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+
+                // ==========================================
+                // ÉTAPE 1 : Localisation & Véhicule
+                // ==========================================
+                if (_currentStep == 1) ...[
+                  const Text(
+                    'Gouvernorat de départ',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.texte,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    height: 52,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: AppColors.champFond,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: kTunisianGovernoratesAndUniversities
+                                .containsKey(_selectedGouvernorat)
+                            ? _selectedGouvernorat
+                            : 'Tunis',
+                        items: kTunisianGovernoratesAndUniversities.keys.map((gov) {
+                          return DropdownMenuItem<String>(
+                            value: gov,
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.location_on_rounded,
+                                  size: 18,
+                                  color: AppColors.primaire,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  gov,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
                               ],
                             ),
-                          ),
-                          const SizedBox(height: 16),
+                          );
+                        }).toList(),
+                        onChanged: _onGouvernoratChanged,
+                      ),
+                    ),
+                  ),
 
-                          const Text(
-                            'Vous êtes :',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF374151),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _RoleCard(
-                                  title: 'Passager',
-                                  icon: Icons.person_outline_rounded,
-                                  isSelected:
-                                      _selectedRole == UserRole.passager,
-                                  onTap: () => setState(
-                                    () => _selectedRole = UserRole.passager,
-                                  ),
-                                ),
+                  const SizedBox(height: 14),
+
+                  const Text(
+                    'Université / Établissement',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.texte,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    height: 52,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: AppColors.champFond,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: universitesDisponibles.contains(_selectedUniversite)
+                            ? _selectedUniversite
+                            : (universitesDisponibles.isNotEmpty
+                                ? universitesDisponibles.first
+                                : null),
+                        items: universitesDisponibles.map((univ) {
+                          return DropdownMenuItem<String>(
+                            value: univ,
+                            child: Text(
+                              univ,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _RoleCard(
-                                  title: 'Conducteur',
-                                  icon: Icons.directions_car_outlined,
-                                  isSelected:
-                                      _selectedRole == UserRole.conducteur,
-                                  onTap: () => setState(
-                                    () => _selectedRole = UserRole.conducteur,
-                                  ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() => _selectedUniversite = val);
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+
+                  if (_selectedRole == UserRole.conducteur) ...[
+                    const SizedBox(height: 18),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaireDoux.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: AppColors.primaire.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(
+                                Icons.directions_car_filled_rounded,
+                                color: AppColors.primaire,
+                                size: 20,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'Détails de votre véhicule',
+                                style: TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primaire,
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: 14),
 
                           Row(
                             children: [
@@ -611,825 +941,418 @@ class _RegisterPageState extends State<RegisterPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text(
-                                      'Prénom',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
+                                    const Text('Marque', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 4),
+                                    Container(
+                                      height: 48,
+                                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(color: AppColors.bordure),
                                       ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    TextFormField(
-                                      controller: _prenomController,
-                                      decoration: _buildInputDecoration(
-                                        'Prénom',
-                                        Icons.person_outline,
-                                      ),
-                                      validator: (v) =>
-                                          (v == null || v.trim().isEmpty)
-                                          ? 'Requis'
-                                          : null,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Nom',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    TextFormField(
-                                      controller: _nomController,
-                                      decoration: _buildInputDecoration(
-                                        'Nom',
-                                        Icons.badge_outlined,
-                                      ),
-                                      validator: (v) =>
-                                          (v == null || v.trim().isEmpty)
-                                          ? 'Requis'
-                                          : null,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-
-                          const Text(
-                            'Email universitaire',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _emailController,
-                            keyboardType: TextInputType.emailAddress,
-                            decoration: _buildInputDecoration(
-                              'prenom.nom@esprit.tn',
-                              Icons.school_outlined,
-                            ),
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Veuillez saisir votre email';
-                              }
-                              if (!value.contains('@')) {
-                                return 'Format d\'email invalide';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 14),
-
-                          const Text(
-                            'Numéro de téléphone',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                height: 48,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF9FAFB),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: AppColors.bordure),
-                                ),
-                                child: DropdownButtonHideUnderline(
-                                  child: DropdownButton<String>(
-                                    value: _selectedCountryCode,
-                                    icon: const Icon(
-                                      Icons.arrow_drop_down,
-                                      size: 20,
-                                    ),
-                                    items: kCountryCodes.map((country) {
-                                      return DropdownMenuItem<String>(
-                                        value: country.code,
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Text(
-                                              country.flag,
-                                              style: const TextStyle(
-                                                fontSize: 18,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              country.code,
-                                              style: const TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
+                                      child: DropdownButtonHideUnderline(
+                                        child: DropdownButton<String>(
+                                          isExpanded: true,
+                                          value: kCarBrandsAndModels.containsKey(_selectedMarque)
+                                              ? _selectedMarque
+                                              : 'Peugeot',
+                                          items: kCarBrandsAndModels.keys.map((b) {
+                                            return DropdownMenuItem(value: b, child: Text(b, style: const TextStyle(fontSize: 12.5)));
+                                          }).toList(),
+                                          onChanged: _onMarqueChanged,
                                         ),
-                                      );
-                                    }).toList(),
-                                    onChanged: (val) {
-                                      if (val != null)
-                                        setState(
-                                          () => _selectedCountryCode = val,
-                                        );
-                                    },
-                                  ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                               const SizedBox(width: 10),
                               Expanded(
-                                child: TextFormField(
-                                  controller: _phoneController,
-                                  keyboardType: TextInputType.phone,
-                                  decoration: _buildInputDecoration(
-                                    '20 123 456',
-                                    Icons.phone_android_outlined,
-                                  ),
-                                  validator: (value) {
-                                    if (value == null || value.trim().isEmpty) {
-                                      return 'Téléphone requis';
-                                    }
-                                    if (value.trim().length < 8) {
-                                      return 'Numéro trop court';
-                                    }
-                                    return null;
-                                  },
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Modèle', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 4),
+                                    Container(
+                                      height: 48,
+                                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(color: AppColors.bordure),
+                                      ),
+                                      child: DropdownButtonHideUnderline(
+                                        child: DropdownButton<String>(
+                                          isExpanded: true,
+                                          value: modelesDisponibles.contains(_selectedModele)
+                                              ? _selectedModele
+                                              : (modelesDisponibles.isNotEmpty ? modelesDisponibles.first : null),
+                                          items: modelesDisponibles.map((m) {
+                                            return DropdownMenuItem(value: m, child: Text(m, style: const TextStyle(fontSize: 12.5), overflow: TextOverflow.ellipsis));
+                                          }).toList(),
+                                          onChanged: (val) {
+                                            if (val != null) setState(() => _selectedModele = val);
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 14),
-                        ],
 
-                        if (_currentStep == 1) ...[
-                          const Text(
-                            'Gouvernorat (24 régions de Tunisie)',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF9FAFB),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: AppColors.bordure),
-                            ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
-                                isExpanded: true,
-                                value:
-                                    kTunisianGovernoratesAndUniversities
-                                        .containsKey(_selectedGouvernorat)
-                                    ? _selectedGouvernorat
-                                    : 'Tunis',
-                                items: kTunisianGovernoratesAndUniversities.keys
-                                    .map((gov) {
-                                      return DropdownMenuItem<String>(
-                                        value: gov,
-                                        child: Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.location_on_outlined,
-                                              size: 18,
-                                              color: AppColors.primaire,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              gov,
-                                              style: const TextStyle(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    })
-                                    .toList(),
-                                onChanged: _onGouvernoratChanged,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-
-                          const Text(
-                            'Université / Faculté',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF9FAFB),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: AppColors.bordure),
-                            ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
-                                isExpanded: true,
-                                value:
-                                    universitesDisponibles.contains(
-                                      _selectedUniversite,
-                                    )
-                                    ? _selectedUniversite
-                                    : (universitesDisponibles.isNotEmpty
-                                          ? universitesDisponibles.first
-                                          : null),
-                                items: universitesDisponibles.map((univ) {
-                                  return DropdownMenuItem<String>(
-                                    value: univ,
-                                    child: Text(
-                                      univ,
-                                      style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  );
-                                }).toList(),
-                                onChanged: (val) {
-                                  if (val != null)
-                                    setState(() => _selectedUniversite = val);
-                                },
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-
-                          if (_selectedRole == UserRole.conducteur) ...[
-                            Container(
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: AppColors.primaireDoux.withValues(
-                                  alpha: 0.4,
-                                ),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: AppColors.primaire.withValues(
-                                    alpha: 0.2,
-                                  ),
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Row(
-                                    children: [
-                                      Icon(
-                                        Icons.directions_car_filled_rounded,
-                                        color: AppColors.primaire,
-                                        size: 20,
-                                      ),
-                                      SizedBox(width: 8),
-                                      Text(
-                                        'Détails du véhicule (Conducteur)',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                          color: AppColors.primaire,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 12),
-
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              'Marque',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 10,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                                border: Border.all(
-                                                  color: AppColors.bordure,
-                                                ),
-                                              ),
-                                              child: DropdownButtonHideUnderline(
-                                                child: DropdownButton<String>(
-                                                  isExpanded: true,
-                                                  value:
-                                                      kCarBrandsAndModels
-                                                          .containsKey(
-                                                            _selectedMarque,
-                                                          )
-                                                      ? _selectedMarque
-                                                      : 'Peugeot',
-                                                  items: kCarBrandsAndModels
-                                                      .keys
-                                                      .map((b) {
-                                                        return DropdownMenuItem(
-                                                          value: b,
-                                                          child: Text(
-                                                            b,
-                                                            style:
-                                                                const TextStyle(
-                                                                  fontSize: 13,
-                                                                ),
-                                                          ),
-                                                        );
-                                                      })
-                                                      .toList(),
-                                                  onChanged: _onMarqueChanged,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              'Modèle',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 10,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                                border: Border.all(
-                                                  color: AppColors.bordure,
-                                                ),
-                                              ),
-                                              child: DropdownButtonHideUnderline(
-                                                child: DropdownButton<String>(
-                                                  isExpanded: true,
-                                                  value:
-                                                      modelesDisponibles
-                                                          .contains(
-                                                            _selectedModele,
-                                                          )
-                                                      ? _selectedModele
-                                                      : (modelesDisponibles
-                                                                .isNotEmpty
-                                                            ? modelesDisponibles
-                                                                  .first
-                                                            : null),
-                                                  items: modelesDisponibles.map(
-                                                    (m) {
-                                                      return DropdownMenuItem(
-                                                        value: m,
-                                                        child: Text(
-                                                          m,
-                                                          style:
-                                                              const TextStyle(
-                                                                fontSize: 13,
-                                                              ),
-                                                          overflow: TextOverflow
-                                                              .ellipsis,
-                                                        ),
-                                                      );
-                                                    },
-                                                  ).toList(),
-                                                  onChanged: (val) {
-                                                    if (val != null)
-                                                      setState(
-                                                        () => _selectedModele =
-                                                            val,
-                                                      );
-                                                  },
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 10),
-
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              'Couleur',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 10,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                                border: Border.all(
-                                                  color: AppColors.bordure,
-                                                ),
-                                              ),
-                                              child: DropdownButtonHideUnderline(
-                                                child: DropdownButton<String>(
-                                                  isExpanded: true,
-                                                  value:
-                                                      kCarColors.contains(
-                                                        _selectedCouleur,
-                                                      )
-                                                      ? _selectedCouleur
-                                                      : 'Noir',
-                                                  items: kCarColors.map((c) {
-                                                    return DropdownMenuItem(
-                                                      value: c,
-                                                      child: Text(
-                                                        c,
-                                                        style: const TextStyle(
-                                                          fontSize: 13,
-                                                        ),
-                                                      ),
-                                                    );
-                                                  }).toList(),
-                                                  onChanged: (val) {
-                                                    if (val != null)
-                                                      setState(
-                                                        () => _selectedCouleur =
-                                                            val,
-                                                      );
-                                                  },
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              'Immatriculation',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            TextFormField(
-                                              controller:
-                                                  _immatriculationController,
-                                              decoration: _buildInputDecoration(
-                                                '220 TUN 1234',
-                                                Icons.pin_outlined,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 12),
-
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      const Text(
-                                        'Places disponibles :',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      Row(
-                                        children: [1, 2, 3, 4].map((count) {
-                                          final isSel =
-                                              _placesDisponibles == count;
-                                          return Padding(
-                                            padding: const EdgeInsets.only(
-                                              left: 6,
-                                            ),
-                                            child: InkWell(
-                                              onTap: () => setState(
-                                                () =>
-                                                    _placesDisponibles = count,
-                                              ),
-                                              child: Container(
-                                                width: 32,
-                                                height: 32,
-                                                decoration: BoxDecoration(
-                                                  color: isSel
-                                                      ? AppColors.primaire
-                                                      : Colors.white,
-                                                  shape: BoxShape.circle,
-                                                  border: Border.all(
-                                                    color: isSel
-                                                        ? AppColors.primaire
-                                                        : AppColors.bordure,
-                                                  ),
-                                                ),
-                                                child: Center(
-                                                  child: Text(
-                                                    '$count',
-                                                    style: TextStyle(
-                                                      color: isSel
-                                                          ? Colors.white
-                                                          : const Color(
-                                                              0xFF374151,
-                                                            ),
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      fontSize: 12,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          );
-                                        }).toList(),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                          ],
-                        ],
-
-                        if (_currentStep == 2) ...[
-                          const Text(
-                            'Mot de passe',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _passwordController,
-                            obscureText: _obscurePassword,
-                            decoration:
-                                _buildInputDecoration(
-                                  '••••••••',
-                                  Icons.lock_outline,
-                                ).copyWith(
-                                  suffixIcon: IconButton(
-                                    icon: Icon(
-                                      _obscurePassword
-                                          ? Icons.visibility_off_outlined
-                                          : Icons.visibility_outlined,
-                                      size: 20,
-                                    ),
-                                    onPressed: () => setState(
-                                      () =>
-                                          _obscurePassword = !_obscurePassword,
-                                    ),
-                                  ),
-                                ),
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'Veuillez choisir un mot de passe';
-                              }
-                              if (value.length < 6) {
-                                return 'Minimum 6 caractères';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 14),
-
-                          const Text(
-                            'Confirmer le mot de passe',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _confirmPasswordController,
-                            obscureText: _obscureConfirmPassword,
-                            decoration:
-                                _buildInputDecoration(
-                                  '••••••••',
-                                  Icons.lock_outline,
-                                ).copyWith(
-                                  suffixIcon: IconButton(
-                                    icon: Icon(
-                                      _obscureConfirmPassword
-                                          ? Icons.visibility_off_outlined
-                                          : Icons.visibility_outlined,
-                                      size: 20,
-                                    ),
-                                    onPressed: () => setState(
-                                      () => _obscureConfirmPassword =
-                                          !_obscureConfirmPassword,
-                                    ),
-                                  ),
-                                ),
-                            validator: (value) {
-                              if (value != _passwordController.text) {
-                                return 'Les mots de passe ne correspondent pas';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 14),
-
-                          CaptchaWidget(
-                            key: _captchaKey,
-                            controller: _captchaController,
-                          ),
                           const SizedBox(height: 12),
 
                           Row(
                             children: [
-                              SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: Checkbox(
-                                  value: _acceptTerms,
-                                  activeColor: AppColors.primaire,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  onChanged: (val) => setState(
-                                    () => _acceptTerms = val ?? false,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Expanded(
-                                child: Text(
-                                  'J\'accepte la charte de covoiturage étudiant et les CGU',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.texte2,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 18),
-
-                          ElevatedButton(
-                            onPressed: _isLoading ? null : _handleRegister,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primaire,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: _isLoading
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.5,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Text(
-                                    'Créer mon compte',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                          ),
-                        ],
-
-                        if (_currentStep < 2) ...[
-                          const SizedBox(height: 18),
-                          Row(
-                            children: [
-                              if (_currentStep > 0)
-                                Expanded(
-                                  child: OutlinedButton(
-                                    onPressed: () =>
-                                        _goToStep(_currentStep - 1),
-                                    child: const Text('Précédent'),
-                                  ),
-                                ),
-                              if (_currentStep > 0) const SizedBox(width: 12),
                               Expanded(
-                                child: ElevatedButton(
-                                  onPressed: _nextStep,
-                                  child: const Text('Continuer'),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Couleur', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 4),
+                                    Container(
+                                      height: 48,
+                                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(color: AppColors.bordure),
+                                      ),
+                                      child: DropdownButtonHideUnderline(
+                                        child: DropdownButton<String>(
+                                          isExpanded: true,
+                                          value: kCarColors.contains(_selectedCouleur)
+                                              ? _selectedCouleur
+                                              : 'Noir',
+                                          items: kCarColors.map((c) {
+                                            return DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 12.5)));
+                                          }).toList(),
+                                          onChanged: (val) {
+                                            if (val != null) setState(() => _selectedCouleur = val);
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Immatriculation', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 4),
+                                    TextFormField(
+                                      controller: _immatriculationController,
+                                      style: const TextStyle(fontSize: 12.5),
+                                      decoration: InputDecoration(
+                                        hintText: '220 TUN 1234',
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                        filled: true,
+                                        fillColor: Colors.white,
+                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.bordure)),
+                                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.bordure)),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
                           ),
+
+                          const SizedBox(height: 14),
+
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Places disponibles :',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Row(
+                                children: [1, 2, 3, 4].map((count) {
+                                  final isSel = _placesDisponibles == count;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(left: 8),
+                                    child: InkWell(
+                                      onTap: () => setState(() => _placesDisponibles = count),
+                                      borderRadius: BorderRadius.circular(50),
+                                      child: Container(
+                                        width: 34,
+                                        height: 34,
+                                        decoration: BoxDecoration(
+                                          color: isSel ? AppColors.primaire : Colors.white,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: isSel ? AppColors.primaire : AppColors.bordure,
+                                          ),
+                                        ),
+                                        child: Center(
+                                          child: Text(
+                                            '$count',
+                                            style: TextStyle(
+                                              color: isSel ? Colors.white : AppColors.texte,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ),
                         ],
+                      ),
+                    ),
+                  ],
+                ],
+
+                // ==========================================
+                // ÉTAPE 2 : Mot de passe & CGU
+                // ==========================================
+                if (_currentStep == 2) ...[
+                  TextFormField(
+                    controller: _passwordController,
+                    obscureText: _obscurePassword,
+                    decoration: _buildPillDecoration(
+                      '••••••••',
+                      Icons.lock_outline_rounded,
+                      suffix: IconButton(
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: AppColors.texte2,
+                          size: 19,
+                        ),
+                        onPressed: () => setState(
+                          () => _obscurePassword = !_obscurePassword,
+                        ),
+                      ),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Veuillez choisir un mot de passe';
+                      }
+                      if (value.length < 6) {
+                        return 'Minimum 6 caractères';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 14),
+
+                  TextFormField(
+                    controller: _confirmPasswordController,
+                    obscureText: _obscureConfirmPassword,
+                    decoration: _buildPillDecoration(
+                      '•••••••• (Confirmer)',
+                      Icons.lock_outline_rounded,
+                      suffix: IconButton(
+                        icon: Icon(
+                          _obscureConfirmPassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: AppColors.texte2,
+                          size: 19,
+                        ),
+                        onPressed: () => setState(
+                          () => _obscureConfirmPassword = !_obscureConfirmPassword,
+                        ),
+                      ),
+                    ),
+                    validator: (value) {
+                      if (value != _passwordController.text) {
+                        return 'Les mots de passe ne correspondent pas';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 14),
+
+                  CaptchaWidget(
+                    key: _captchaKey,
+                    controller: _captchaController,
+                  ),
+                  const SizedBox(height: 14),
+
+                  InkWell(
+                    onTap: () => setState(() => _acceptTerms = !_acceptTerms),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 20,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            color: _acceptTerms ? AppColors.primaire : Colors.transparent,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: _acceptTerms ? AppColors.primaire : AppColors.texte2.withValues(alpha: 0.5),
+                              width: 1.6,
+                            ),
+                          ),
+                          child: _acceptTerms
+                              ? const Icon(Icons.check, size: 14, color: Colors.white)
+                              : null,
+                        ),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            "J'accepte la charte étudiante & les conditions d'utilisation",
+                            style: TextStyle(fontSize: 12.5, color: AppColors.texte2),
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                ),
-              ),
+                ],
 
-              const SizedBox(height: 18),
+                const SizedBox(height: 24),
 
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    'Déjà un compte ? ',
-                    style: TextStyle(color: AppColors.texte2, fontSize: 13),
-                  ),
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
-                    child: const Text(
-                      'Se connecter',
-                      style: TextStyle(
-                        color: AppColors.primaire,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
+                // Boutons d'action (Précédent / Continuer / Créer)
+                if (_currentStep < 2) ...[
+                  Row(
+                    children: [
+                      if (_currentStep > 0) ...[
+                        Expanded(
+                          child: SizedBox(
+                            height: 52,
+                            child: OutlinedButton(
+                              onPressed: () => _goToStep(_currentStep - 1),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: AppColors.bordure),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                              ),
+                              child: const Text('Précédent', style: TextStyle(color: AppColors.texte, fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                      ],
+                      Expanded(
+                        child: SizedBox(
+                          height: 52,
+                          child: ElevatedButton(
+                            onPressed: _nextStep,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primaire,
+                              foregroundColor: Colors.white,
+                              elevation: 3,
+                              shadowColor: AppColors.primaire.withValues(alpha: 0.35),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                            ),
+                            child: const Text('Continuer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                          ),
+                        ),
                       ),
+                    ],
+                  ),
+                ] else ...[
+                  SizedBox(
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _handleRegister,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaire,
+                        foregroundColor: Colors.white,
+                        elevation: 3,
+                        shadowColor: AppColors.primaire.withValues(alpha: 0.35),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 22,
+                              width: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                            )
+                          : const Text('Login', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                     ),
                   ),
                 ],
-              ),
-              const SizedBox(height: 20),
-            ],
+
+                const SizedBox(height: 22),
+
+                // Rangée sociale "Or continue with" (Screen 3)
+                SocialLoginRow(
+                  isLoading: _isGoogleLoading,
+                  onGoogleTap: _handleGoogleSignIn,
+                ),
+
+                const SizedBox(height: 22),
+
+                // Lien bas de page "Already have an account? Sign up" (Screen 3)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      'Already have an account? ',
+                      style: TextStyle(color: AppColors.texte2, fontSize: 13),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: const Text(
+                        'Sign up',
+                        style: TextStyle(
+                          color: AppColors.primaire,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 20),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  InputDecoration _buildInputDecoration(String hint, IconData icon) {
+  InputDecoration _buildPillDecoration(
+    String hint,
+    IconData icon, {
+    Widget? suffix,
+  }) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(color: Colors.grey, fontSize: 12),
-      prefixIcon: Icon(icon, color: AppColors.primaire, size: 18),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      hintStyle: TextStyle(
+        color: AppColors.texte2.withValues(alpha: 0.65),
+        fontSize: 13.5,
+      ),
+      prefixIcon: Padding(
+        padding: const EdgeInsets.only(left: 14, right: 10),
+        child: Icon(icon, color: AppColors.texte2, size: 20),
+      ),
+      prefixIconConstraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+      suffixIcon: suffix,
       filled: true,
-      fillColor: const Color(0xFFF9FAFB),
+      fillColor: AppColors.champFond,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.bordure),
+        borderRadius: BorderRadius.circular(20),
+        borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.bordure),
+        borderRadius: BorderRadius.circular(20),
+        borderSide: BorderSide.none,
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.primaire, width: 2),
+        borderRadius: BorderRadius.circular(20),
+        borderSide: const BorderSide(color: AppColors.primaire, width: 1.5),
       ),
     );
   }
@@ -1452,17 +1375,26 @@ class _RoleCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(18),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primaireDoux : const Color(0xFFF9FAFB),
-          borderRadius: BorderRadius.circular(12),
+          color: isSelected ? AppColors.champFond : Colors.white,
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: isSelected ? AppColors.primaire : AppColors.bordure,
-            width: isSelected ? 2 : 1,
+            width: isSelected ? 1.8 : 1,
           ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: AppColors.primaire.withValues(alpha: 0.08),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : null,
         ),
         child: Column(
           children: [
@@ -1471,15 +1403,13 @@ class _RoleCard extends StatelessWidget {
               color: isSelected ? AppColors.primaire : AppColors.texte2,
               size: 24,
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Text(
               title,
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                color: isSelected
-                    ? AppColors.primaire
-                    : const Color(0xFF374151),
+                color: isSelected ? AppColors.primaire : AppColors.texte,
               ),
             ),
           ],
