@@ -1,6 +1,8 @@
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../../features/messagerie/data/messagerie_schema.dart';
+
 class DatabaseService {
   DatabaseService._();
 
@@ -23,7 +25,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade, // <-- ON AJOUTE LA FONCTION DE MISE À JOUR
     );
@@ -102,6 +104,7 @@ class DatabaseService {
 
     await _createAppUsersTable(db);
     await _createReclamationsTable(db);
+    await MessagerieSchema.creerTables(db);
   }
 
   // Cette méthode s'exécute si l'application détecte une ancienne version (version 1)
@@ -116,6 +119,9 @@ class DatabaseService {
     if (oldVersion < 3) {
       await _createAppUsersTable(db);
       await _createReclamationsTable(db);
+    }
+    if (oldVersion < 4) {
+      await MessagerieSchema.creerTables(db);
     }
   }
 
