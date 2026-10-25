@@ -15,7 +15,8 @@ import 'creer_groupe_page.dart';
 // ============================================================
 
 class MessageriePage extends StatefulWidget {
-  const MessageriePage({super.key});
+  final bool isStandalone;
+  const MessageriePage({super.key, this.isStandalone = true});
 
   @override
   State<MessageriePage> createState() =>
@@ -136,6 +137,15 @@ class _MessageriePageState extends State<MessageriePage> {
 
             Row(
               children: [
+                if (widget.isStandalone) ...[
+                  IconButton(
+                    onPressed: () {
+                      Navigator.of(context).maybePop();
+                    },
+                    icon: const Icon(Icons.arrow_back),
+                  ),
+                  const SizedBox(width: 4),
+                ],
                 const Expanded(
                   child: Text(
                     'Messages',
@@ -306,12 +316,15 @@ class _MessageriePageState extends State<MessageriePage> {
       // BOUTON FLOTTANT — NOUVEAU GROUPE
       // =========================================================
 
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _nouveauGroupe,
-        backgroundColor: AppColors.primaire,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.group_add_outlined),
-        label: const Text('Nouveau groupe'),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 80),
+        child: FloatingActionButton.extended(
+          onPressed: _nouveauGroupe,
+          backgroundColor: AppColors.primaire,
+          foregroundColor: Colors.white,
+          icon: const Icon(Icons.group_add_outlined),
+          label: const Text('Nouveau groupe'),
+        ),
       ),
     );
   }
