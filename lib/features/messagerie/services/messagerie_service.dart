@@ -1,3 +1,5 @@
+import 'dart:io' as io;
+
 import 'package:flutter/foundation.dart';
 
 import '../../../core/constants/app_constants.dart';
@@ -7,6 +9,7 @@ import '../data/messagerie_mock.dart';
 import '../models/conversation.dart';
 import '../models/message.dart';
 
+import 'audio_service.dart';
 import 'filtre_contenu.dart';
 
 export '../data/messagerie_mock.dart' show TrajetPropose;
@@ -69,6 +72,20 @@ class MessagerieService extends ChangeNotifier {
 
   /// Durée de la suspension d'envoi.
   static const Duration _dureeSuspension = Duration(seconds: 60);
+
+  /// Durée maximale d'un message vocal simulé.
+  static const int dureeMaxVocalSecondes = 120;
+
+  /// Durée minimale d'un message vocal.
+  static const int dureeMinVocalSecondes = 1;
+
+  /// Identifiant du vocal en cours de lecture (un seul à la fois).
+  final ValueNotifier<int?> _vocalEnLecture =
+      ValueNotifier<int?>(null);
+
+  ValueListenable<int?> get vocalEnLecture => _vocalEnLecture;
+
+  int? get vocalEnLectureId => _vocalEnLecture.value;
 
   // ---------------------------------------------------------
   // LECTURE
@@ -247,6 +264,145 @@ class MessagerieService extends ChangeNotifier {
     });
 
     return inapproprie;
+  }
+
+  /// Envoie un message vocal. La durée est bornée à 120 s.
+  Message envoyerVocal(
+    int conversationId,
+    int dureeSecondes,
+    String? cheminAudio,
+  ) {
+    final conversation = this.conversation(conversationId);
+    if (conversation == null) {
+      throw const MessagerieException(
+        'Conversation introuvable.',
+      );
+    }
+    if (conversation.archive) {
+      throw const MessagerieException(
+        'Ce groupe est archivé : lecture seule.',
+      );
+    }
+    if (conversation.bloque) {
+      throw const MessagerieException(
+        'Vous avez bloqué cet utilisateur : impossible '
+        'd\'envoyer un message.',
+      );
+    }
+    if (estSuspendu) {
+      throw MessagerieException(
+        'Envoi suspendu, réessayez dans '
+        '$secondesRestantes s',
+      );
+    }
+    if (dureeSecondes < dureeMinVocalSecondes) {
+      throw const MessagerieException(
+        'Message trop court',
+      );
+    }
+
+    final duree = dureeSecondes > dureeMaxVocalSecondes
+        ? dureeMaxVocalSecondes
+        : dureeSecondes;
+
+    // Anti-abus : 5 messages maximum par 10 secondes.
+    _verifierRythme();
+
+    final date = DateTime.now();
+    final message = Message(
+      id: date.millisecondsSinceEpoch,
+      expediteurId: monId,
+      expediteurNom: monNom,
+      contenu: 'Message vocal',
+      dateEnvoi: date,
+      type: TypeMessage.vocal,
+      statut: StatutMessage.envoye,
+      dureeSecondes: duree,
+      cheminAudio: cheminAudio,
+      ecoute: true,
+    );
+
+    _listeMessages(conversationId).add(message);
+
+    _remplacerConversation(
+      conversation.copyWith(
+        dernierMessage:
+            '🎤 Message vocal · '
+            '${message.dureeVocalFormatee}',
+        dateDernierMessage: date,
+      ),
+    );
+
+    notifyListeners();
+
+    // Simulation : livré après 1 seconde, lu après 3 secondes.
+    Future.delayed(const Duration(seconds: 1), () {
+      _changerStatutMessage(
+        conversationId,
+        message.id,
+        StatutMessage.livre,
+      );
+    });
+
+    Future.delayed(const Duration(seconds: 3), () {
+      _changerStatutMessage(
+        conversationId,
+        message.id,
+        StatutMessage.lu,
+      );
+    });
+
+    return message;
+  }
+
+  /// Raison pour laquelle le micro est désactivé, ou null.
+  String? motifMicroDesactive(int conversationId) {
+    final conversation = this.conversation(conversationId);
+    if (conversation == null) {
+      return 'Conversation introuvable.';
+    }
+    if (conversation.archive) {
+      return 'Groupe archivé : lecture seule.';
+    }
+    if (conversation.bloque) {
+      return 'Vous avez bloqué cet utilisateur : '
+          'envoi impossible.';
+    }
+    if (estSuspendu) {
+      return 'Envoi suspendu, réessayez dans '
+          '$secondesRestantes s.';
+    }
+    return null;
+  }
+
+  /// Marque un vocal comme écouté.
+  void marquerEcoute(int messageId) {
+    for (final messages in _messages.values) {
+      final index = messages.indexWhere(
+        (m) => m.id == messageId,
+      );
+      if (index == -1) continue;
+
+      if (messages[index].ecoute) return;
+
+      messages[index] = messages[index].copyWith(
+        ecoute: true,
+      );
+      notifyListeners();
+      return;
+    }
+  }
+
+  /// Démarre la lecture d'un vocal (met les autres en pause).
+  void demarrerLectureVocal(int messageId) {
+    _vocalEnLecture.value = messageId;
+  }
+
+  /// Arrête la lecture d'un vocal s'il est toujours actif.
+  void arreterLectureVocal(int messageId) {
+    if (_vocalEnLecture.value == messageId) {
+      _vocalEnLecture.value = null;
+    }
   }
 
   /// Vrai si l'envoi est actuellement suspendu.
@@ -463,6 +619,147 @@ class MessagerieService extends ChangeNotifier {
     notifyListeners();
   }
 
+  void supprimerPourMoi(int conversationId, int messageId) {
+    final conversation = this.conversation(conversationId);
+    if (conversation == null) {
+      throw const MessagerieException('Conversation introuvable.');
+    }
+    if (conversation.archive) {
+      throw const MessagerieException('Ce groupe est archivé : lecture seule.');
+    }
+    if (conversation.bloque) {
+      throw const MessagerieException(
+        'Vous avez bloqué cet utilisateur : impossible d\'envoyer un message.',
+      );
+    }
+
+    final messages = _messages[conversationId];
+    if (messages == null) return;
+    final index = messages.indexWhere((m) => m.id == messageId);
+    if (index == -1) return;
+    final msg = messages[index];
+    if (msg.estSysteme) return;
+
+    messages[index] = msg.copyWith(supprimePourMoi: true);
+    notifyListeners();
+  }
+
+  bool estConducteurCreateurGroupe(Conversation conversation) {
+    if (!conversation.estGroupe || conversation.trajetId == null) return false;
+    final t = trajet(conversation.trajetId!);
+    return t != null && t.conducteurId == monId;
+  }
+
+  void supprimerPourTous(int conversationId, int messageId) {
+    final conversation = this.conversation(conversationId);
+    if (conversation == null) {
+      throw const MessagerieException('Conversation introuvable.');
+    }
+    if (conversation.archive) {
+      throw const MessagerieException('Ce groupe est archivé : lecture seule.');
+    }
+    if (conversation.bloque) {
+      throw const MessagerieException(
+        'Vous avez bloqué cet utilisateur : impossible d\'envoyer un message.',
+      );
+    }
+
+    final messages = _messages[conversationId];
+    if (messages == null) return;
+    final index = messages.indexWhere((m) => m.id == messageId);
+    if (index == -1) return;
+    final msg = messages[index];
+    if (msg.estSysteme) return;
+    if (msg.estSignale) {
+      throw const MessagerieException(
+        'Message signalé : suppression pour tous impossible',
+      );
+    }
+
+    final estMien = msg.estMien;
+    final estConducteur = estConducteurCreateurGroupe(conversation);
+    final moinsDe10Min =
+        DateTime.now().difference(msg.dateEnvoi).inMinutes < 10;
+
+    if (!(estMien && moinsDe10Min) && !estConducteur) {
+      throw const MessagerieException(
+        'Suppression pour tous non autorisée.',
+      );
+    }
+
+    if (msg.estVocal && msg.cheminAudio != null && msg.cheminAudio!.isNotEmpty) {
+      try {
+        final f = io.File(msg.cheminAudio!);
+        if (f.existsSync()) {
+          f.deleteSync();
+        }
+      } catch (_) {}
+      if (AudioService.instance.messageIdEnCours == msg.id) {
+        try {
+          AudioService.instance.arreter();
+        } catch (_) {}
+        arreterLectureVocal(msg.id);
+      }
+    }
+
+    messages[index] = msg.copyWith(
+      supprimePourTous: true,
+      supprimePourMoi: true,
+      dateSuppression: DateTime.now(),
+    );
+
+    if (!msg.estMien && _estNonLu(msg)) {
+      // nonLus recalculés via copie
+    }
+
+    _mettreAJourDernierMessageApresSuppression(conversationId);
+    notifyListeners();
+  }
+
+  void _mettreAJourDernierMessageApresSuppression(int conversationId) {
+    final messages = _messages[conversationId];
+    if (messages == null) return;
+    Message? dernierVisible;
+    for (var i = messages.length - 1; i >= 0; i--) {
+      final m = messages[i];
+      if (m.estSysteme) {
+        dernierVisible = m;
+        break;
+      }
+      if (m.supprimePourTous) continue;
+      if (m.supprimePourMoi) continue;
+      dernierVisible = m;
+      break;
+    }
+    if (dernierVisible == null) {
+      final conv = conversation(conversationId);
+      if (conv == null) return;
+      _remplacerConversation(
+        conv.copyWith(
+          dernierMessage: 'Message supprimé',
+          dateDernierMessage: DateTime.now(),
+        ),
+      );
+      return;
+    }
+    final conv = conversation(conversationId);
+    if (conv == null) return;
+    String txt;
+    if (dernierVisible.estSysteme) {
+      txt = dernierVisible.contenu;
+    } else if (dernierVisible.estVocal) {
+      txt = '🎤 Message vocal · ${dernierVisible.dureeVocalFormatee}';
+    } else {
+      txt = dernierVisible.contenu;
+    }
+    _remplacerConversation(
+      conv.copyWith(
+        dernierMessage: txt,
+        dateDernierMessage: dernierVisible.dateEnvoi,
+      ),
+    );
+  }
+
   /// Simulation : un passager annule sa réservation.
   /// Il est retiré du groupe et un message système est ajouté.
   void annulerReservation(
@@ -617,6 +914,133 @@ class MessagerieService extends ChangeNotifier {
     }
 
     return 'Nouveau message de $expediteurNom';
+  }
+
+  /// Simulation : ajoute un vocal entrant.
+  /// Retourne le texte de notification à afficher, ou null si la
+  /// conversation est ouverte ou en mode muet.
+  String? simulerSuppressionMessageRecu(int conversationId) {
+    final conversation = this.conversation(conversationId);
+    if (conversation == null) {
+      throw const MessagerieException('Conversation introuvable.');
+    }
+    if (conversation.archive) {
+      throw const MessagerieException('Ce groupe est archivé : lecture seule.');
+    }
+    if (conversation.bloque) {
+      throw const MessagerieException(
+        'Vous avez bloqué cet utilisateur : impossible de recevoir ses messages.',
+      );
+    }
+
+    final messages = _messages[conversationId];
+    if (messages == null || messages.isEmpty) return null;
+
+    // Trouver le dernier message reçu (pas mien, pas système)
+    for (var i = messages.length - 1; i >= 0; i--) {
+      final m = messages[i];
+      if (m.estMien || m.estSysteme) continue;
+      if (m.supprimePourTous) continue;
+
+      if (m.estVocal && m.cheminAudio != null && m.cheminAudio!.isNotEmpty) {
+        try {
+          final f = io.File(m.cheminAudio!);
+          if (f.existsSync()) {
+            f.deleteSync();
+          }
+        } catch (_) {}
+        if (AudioService.instance.messageIdEnCours == m.id) {
+          try {
+            AudioService.instance.arreter();
+          } catch (_) {}
+          arreterLectureVocal(m.id);
+        }
+      }
+
+      messages[i] = m.copyWith(
+        supprimePourTous: true,
+        supprimePourMoi: true,
+        dateSuppression: DateTime.now(),
+      );
+      _mettreAJourDernierMessageApresSuppression(conversationId);
+      notifyListeners();
+      if (_conversationOuverteId == conversationId || conversation.muet) {
+        return null;
+      }
+      return 'Un message reçu a été supprimé';
+    }
+    return null;
+  }
+
+  String? simulerVocalRecu(
+    int conversationId,
+    int dureeSecondes, {
+    String? cheminAudio,
+  }) {
+    final conversation = this.conversation(conversationId);
+    if (conversation == null) {
+      throw const MessagerieException(
+        'Conversation introuvable.',
+      );
+    }
+    if (conversation.archive) {
+      throw const MessagerieException(
+        'Ce groupe est archivé : lecture seule.',
+      );
+    }
+    if (conversation.bloque) {
+      throw const MessagerieException(
+        'Vous avez bloqué cet utilisateur : impossible '
+        'de recevoir ses messages.',
+      );
+    }
+
+    final duree = dureeSecondes < 3
+        ? 3
+        : dureeSecondes > 45
+            ? 45
+            : dureeSecondes;
+
+    final expediteurNom = conversation.estGroupe
+        ? conversation.membres.firstWhere(
+            (m) => m != monNom,
+            orElse: () => 'Un membre',
+          )
+        : conversation.titre;
+
+    final date = DateTime.now();
+    final message = Message(
+      id: date.millisecondsSinceEpoch,
+      expediteurId: -1,
+      expediteurNom: expediteurNom,
+      contenu: 'Message vocal',
+      dateEnvoi: date,
+      type: TypeMessage.vocal,
+      statut: StatutMessage.livre,
+      dureeSecondes: duree,
+      cheminAudio: cheminAudio,
+      ecoute: false,
+    );
+
+    _listeMessages(conversationId).add(message);
+
+    _remplacerConversation(
+      conversation.copyWith(
+        dernierMessage:
+            '🎤 Message vocal · '
+            '${message.dureeVocalFormatee}',
+        dateDernierMessage: date,
+      ),
+    );
+
+    notifyListeners();
+
+    if (_conversationOuverteId == conversationId ||
+        conversation.muet) {
+      return null;
+    }
+
+    return 'Message vocal de $expediteurNom';
   }
 
   void quitterGroupe(int conversationId) {

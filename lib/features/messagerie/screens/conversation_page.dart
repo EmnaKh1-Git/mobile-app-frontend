@@ -1,4 +1,7 @@
+import 'dart:io' as io;
+
 import 'package:flutter/material.dart';
+import 'package:just_audio/just_audio.dart';
 
 import '../../../app/theme.dart';
 
@@ -6,8 +9,10 @@ import '../../../core/utils/helpers.dart';
 
 import '../models/conversation.dart';
 import '../models/message.dart';
+import '../services/audio_service.dart';
 import '../services/messagerie_service.dart';
 
+import '../widgets/barre_saisie.dart';
 import '../widgets/bulle_message.dart';
 
 import 'infos_groupe_page.dart';
@@ -57,6 +62,7 @@ class _ConversationPageState
     MessagerieService.instance.fermerConversation(
       widget.conversation.id,
     );
+    AudioService.instance.arreter();
     _saisieCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
@@ -90,6 +96,87 @@ class _ConversationPageState
     });
   }
 
+  /// Simule la réception d'un vocal avec le dernier vocal enregistré.
+  Future<void> _simulerVocalRecu() async {
+    final chemin = AudioService.instance.dernierCheminEnregistre;
+    if (chemin == null || chemin.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Enregistrez d\'abord un vocal pour pouvoir simuler un vocal reçu',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final fichier = io.File(chemin);
+    if (!await fichier.exists()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Enregistrez d\'abord un vocal pour pouvoir simuler un vocal reçu',
+          ),
+        ),
+      );
+      return;
+    }
+
+    int duree = 3;
+    try {
+      final player = AudioPlayer();
+      await player.setAudioSource(AudioSource.file(chemin));
+      final d = await player.durationStream.first;
+      if (d != null && d.inSeconds > 0) {
+        duree = d.inSeconds;
+      }
+      await player.dispose();
+    } catch (_) {
+      duree = 3;
+    }
+
+    String? notification;
+
+    try {
+      notification = MessagerieService.instance.simulerVocalRecu(
+        widget.conversation.id,
+        duree,
+        cheminAudio: chemin,
+      );
+    } on MessagerieException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+      return;
+    }
+
+    // Mettre à jour le dernier message vocal avec le chemin audio
+    final messages =
+        MessagerieService.instance.messagesDe(widget.conversation.id);
+    if (messages.isNotEmpty) {
+      final dernier = messages.last;
+      if (dernier.type == TypeMessage.vocal &&
+          dernier.cheminAudio == null) {
+        // On ne peut pas modifier directement la liste mock, mais on peut
+        // forcer via le service si nécessaire - on laisse tel quel car
+        // simulerVocalRecu crée un nouveau message; mieux de le patcher
+      }
+    }
+
+    if (notification != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(notification)),
+      );
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _defilerEnBas();
+    });
+  }
+
   /// Conversation toujours à jour dans le service
   /// (membres et mode muet modifiables depuis les infos).
   Conversation get _conversation =>
@@ -97,6 +184,28 @@ class _ConversationPageState
         widget.conversation.id,
       ) ??
       widget.conversation;
+
+  void _simulerSuppressionRecu() {
+    String? notification;
+    try {
+      notification = MessagerieService.instance
+          .simulerSuppressionMessageRecu(widget.conversation.id);
+    } on MessagerieException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+      return;
+    }
+    if (notification != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(notification)),
+      );
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _defilerEnBas();
+    });
+  }
 
   // ---------------------------------------------------------
   // DÉFILEMENT VERS LE BAS
@@ -312,6 +421,153 @@ class _ConversationPageState
   // LISTE DES BULLES (avec séparateurs de date)
   // ---------------------------------------------------------
 
+  void _afficherMenuSuppression(Message message) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final estMien = message.estMien;
+
+        return Container(
+          margin: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.bordure,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline),
+                  title: const Text('Supprimer'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _afficherDialogueSuppression(message);
+                  },
+                ),
+                if (!estMien)
+                  ListTile(
+                    leading: const Icon(Icons.flag_outlined),
+                    title: const Text('Signaler'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _signaler(message);
+                    },
+                  ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _afficherDialogueSuppression(Message message) {
+    final estMien = message.estMien;
+    final estConducteur =
+        MessagerieService.instance.estConducteurCreateurGroupe(_conversation);
+    final moinsDe10Min =
+        DateTime.now().difference(message.dateEnvoi).inMinutes < 10;
+    final peutSupprimerTous = (estMien && moinsDe10Min) || estConducteur;
+    final estSignale = message.estSignale;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text('Supprimer pour moi'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _supprimerPourMoi(message);
+              },
+            ),
+            ListTile(
+              title: const Text('Supprimer pour tous'),
+              subtitle: !peutSupprimerTous
+                  ? const Text('Non autorisé')
+                  : estSignale
+                      ? const Text('Message signalé')
+                      : null,
+              enabled: peutSupprimerTous && !estSignale,
+              onTap: (peutSupprimerTous && !estSignale)
+                  ? () {
+                      Navigator.pop(ctx);
+                      _supprimerPourTous(message);
+                    }
+                  : null,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _supprimerPourMoi(Message message) {
+    try {
+      MessagerieService.instance.supprimerPourMoi(
+        widget.conversation.id,
+        message.id,
+      );
+    } on MessagerieException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+      return;
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Message supprimé pour moi'),
+        action: SnackBarAction(
+          label: 'Annuler',
+          onPressed: () {
+            // Restauration non implémentée dans ce contexte simple
+          },
+        ),
+        duration: const Duration(seconds: 5),
+      ),
+    );
+  }
+
+  void _supprimerPourTous(Message message) {
+    try {
+      MessagerieService.instance.supprimerPourTous(
+        widget.conversation.id,
+        message.id,
+      );
+    } on MessagerieException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+      return;
+    }
+  }
+
   List<Widget> _construireMessages(
     Conversation conversation,
     List<Message> messages,
@@ -320,6 +576,10 @@ class _ConversationPageState
     DateTime? jourPrecedent;
 
     for (final message in messages) {
+      if (message.supprimePourMoi && !message.supprimePourTous) {
+        continue;
+      }
+
       final jour = DateTime(
         message.dateEnvoi.year,
         message.dateEnvoi.month,
@@ -344,13 +604,11 @@ class _ConversationPageState
             message: message,
             afficherNom:
                 conversation.estGroupe,
-            onLongPress:
-                message.estSysteme ||
-                        message.estMien
-                    ? null
-                    : () {
-                        _signaler(message);
-                      },
+            onLongPress: message.estSysteme
+                ? null
+                : () {
+                    _afficherMenuSuppression(message);
+                  },
           ),
         ),
       );
@@ -534,12 +792,24 @@ class _ConversationPageState
                 // BARRE DE SAISIE
                 // =================================================
 
-                _BarreSaisie(
+                BarreSaisie(
                   controller: _saisieCtrl,
                   onEnvoyer: _envoyer,
+                  conversationId: conversation.id,
                   enabled: !archivee &&
                       !bloque &&
                       !suspendu,
+                  motifMicroDesactive:
+                      MessagerieService.instance
+                          .motifMicroDesactive(
+                    conversation.id,
+                  ),
+                  onVocalEnvoye: () {
+                    WidgetsBinding.instance
+                        .addPostFrameCallback((_) {
+                      _defilerEnBas();
+                    });
+                  },
                 ),
               ],
             ),
@@ -637,15 +907,42 @@ class _ConversationPageState
               ],
             ),
             actions: [
-              IconButton.outlined(
-                onPressed: archivee
-                    ? null
-                    : _simulerMessageRecu,
-                icon: const Icon(
-                  Icons.mark_email_unread_outlined,
+                PopupMenuButton<String>(
+                  enabled: !archivee,
+                  tooltip: 'Simuler',
+                  icon: const Icon(
+                    Icons.mark_email_unread_outlined,
+                  ),
+                  onSelected: (valeur) {
+                    if (valeur == 'texte') {
+                      _simulerMessageRecu();
+                    } else if (valeur == 'vocal') {
+                      _simulerVocalRecu();
+                    } else if (valeur == 'supprimer') {
+                      _simulerSuppressionRecu();
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem<String>(
+                      value: 'texte',
+                      child: Text(
+                        'Simuler un message reçu',
+                      ),
+                    ),
+                    PopupMenuItem<String>(
+                      value: 'vocal',
+                      child: Text(
+                        'Simuler un vocal reçu',
+                      ),
+                    ),
+                    PopupMenuItem<String>(
+                      value: 'supprimer',
+                      child: Text(
+                        'Simuler la suppression d\'un message reçu',
+                      ),
+                    ),
+                  ],
                 ),
-                tooltip: 'Simuler un message reçu',
-              ),
               const SizedBox(width: 4),
               IconButton.outlined(
                 onPressed: _ouvrirInfos,
@@ -774,99 +1071,4 @@ class _SeparateurDate extends StatelessWidget {
   }
 }
 
-// ============================================================
-// BARRE DE SAISIE
-// ============================================================
 
-class _BarreSaisie extends StatelessWidget {
-  final TextEditingController controller;
-  final VoidCallback onEnvoyer;
-  final bool enabled;
-
-  const _BarreSaisie({
-    required this.controller,
-    required this.onEnvoyer,
-    this.enabled = true,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(
-        16,
-        10,
-        16,
-        10,
-      ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          top: BorderSide(
-            color: AppColors.bordure,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Container(
-              height: 48,
-              padding:
-                  const EdgeInsets.symmetric(
-                horizontal: 16,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius:
-                    BorderRadius.circular(18),
-                border: Border.all(
-                  color: AppColors.bordure,
-                ),
-              ),
-              child: TextField(
-                controller: controller,
-                enabled: enabled,
-                textInputAction:
-                    TextInputAction.send,
-                onSubmitted: (_) => onEnvoyer(),
-                decoration: InputDecoration(
-                  border: InputBorder.none,
-                  hintText:
-                      enabled ? 'Message…' : 'Groupe archivé',
-                  hintStyle: const TextStyle(
-                    fontSize: 15,
-                    color: AppColors.texte2,
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          const SizedBox(width: 10),
-
-          SizedBox(
-            width: 48,
-            height: 48,
-            child: FilledButton(
-              style:
-                  FilledButton.styleFrom(
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(
-                  48,
-                  48,
-                ),
-                backgroundColor:
-                    AppColors.primaire,
-              ),
-              onPressed: enabled ? onEnvoyer : null,
-              child: const Icon(
-                Icons.send,
-                size: 20,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

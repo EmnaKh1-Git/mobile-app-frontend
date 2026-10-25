@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../../app/theme.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/helpers.dart';
 
 import '../models/message.dart';
+
+import 'bulle_vocale.dart';
 
 // ============================================================
 // BULLE DE MESSAGE
@@ -17,7 +20,7 @@ class BulleMessage extends StatelessWidget {
   /// (conversations de groupe uniquement).
   final bool afficherNom;
 
-  /// Appui long (ex. signaler un message).
+  /// Appui long.
   final VoidCallback? onLongPress;
 
   const BulleMessage({
@@ -213,9 +216,48 @@ class BulleMessage extends StatelessWidget {
     );
   }
 
+  Widget _messageSupprime() {
+    final estGroupe = afficherNom || message.expediteurId != monId;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 6,
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.bordure,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Text(
+            estGroupe && !message.estMien
+                ? '🚫 ${message.expediteurNom} : Ce message a été supprimé'
+                : '🚫 Ce message a été supprimé',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.texte2,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (message.supprimePourTous) {
+      return _messageSupprime();
+    }
     if (message.estSysteme) return _messageSysteme();
+    if (message.estVocal) {
+      return BulleVocale(
+        message: message,
+        afficherNom: afficherNom,
+        onLongPress: onLongPress,
+      );
+    }
     return _bulle();
   }
 }
