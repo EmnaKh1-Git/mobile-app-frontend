@@ -2,13 +2,17 @@
 //  MODULE : GESTION DES TRAJETS (Yassine)
 //  Fichier : lib/features/trajet/screens/recherche_trajet_page.dart
 //  Écran : rechercher un trajet (+ prochains départs)
+//  Départ / arrivée choisis comme sur inDrive (adresse ou carte) :
+//  les trajets qui passent à moins de 15 km sont proposés.
 // ============================================================
 
 import 'package:flutter/material.dart';
 
+import '../../../models/lieu.dart';
 import '../services/trajet_service.dart';
 import '../utils/trajet_format.dart';
 import '../widgets/trajet_card.dart';
+import 'choix_itineraire_page.dart';
 import 'detail_trajet_page.dart';
 import 'resultats_trajet_page.dart';
 
@@ -22,8 +26,45 @@ class RechercheTrajetPage extends StatefulWidget {
 class _RechercheTrajetPageState extends State<RechercheTrajetPage> {
   final _depart = TextEditingController();
   final _arrivee = TextEditingController();
+  Lieu? _lieuDepart;
+  Lieu? _lieuArrivee;
   DateTime? _date;
   int _places = 1;
+
+  /// Ouvre l'écran « Indiquer votre itinéraire »
+  Future<void> _choisirLieux({bool arrivee = false}) async {
+    final res = await Navigator.push<ItineraireChoisi>(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ChoixItinerairePage(
+          depart: _lieuDepart,
+          arrivee: _lieuArrivee,
+          modifierArrivee: arrivee,
+          exigerLesDeux: false,
+        ),
+      ),
+    );
+    if (res == null || !mounted) return;
+    setState(() {
+      _lieuDepart = res.depart;
+      _lieuArrivee = res.arrivee;
+      _depart.text = res.depart?.libelleCourt ?? '';
+      _arrivee.text = res.arrivee?.libelleCourt ?? '';
+    });
+  }
+
+  void _effacerLieu({required bool arrivee}) {
+    setState(() {
+      if (arrivee) {
+        _lieuArrivee = null;
+        _arrivee.clear();
+      } else {
+        _lieuDepart = null;
+        _depart.clear();
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -51,9 +92,14 @@ class _RechercheTrajetPageState extends State<RechercheTrajetPage> {
   }
 
   void _permuter() {
-    final tmp = _depart.text;
-    _depart.text = _arrivee.text;
-    _arrivee.text = tmp;
+    setState(() {
+      final tmp = _depart.text;
+      _depart.text = _arrivee.text;
+      _arrivee.text = tmp;
+      final l = _lieuDepart;
+      _lieuDepart = _lieuArrivee;
+      _lieuArrivee = l;
+    });
   }
 
   void _rechercher() {
@@ -61,8 +107,10 @@ class _RechercheTrajetPageState extends State<RechercheTrajetPage> {
       context,
       MaterialPageRoute(
         builder: (_) => ResultatsTrajetPage(
-          depart: _depart.text,
-          arrivee: _arrivee.text,
+          depart: _lieuDepart?.villeOuNom ?? '',
+          arrivee: _lieuArrivee?.villeOuNom ?? '',
+          lieuDepart: _lieuDepart,
+          lieuArrivee: _lieuArrivee,
           date: _date,
           places: _places,
         ),
@@ -100,23 +148,42 @@ class _RechercheTrajetPageState extends State<RechercheTrajetPage> {
                                 children: [
                                   TextField(
                                     controller: _depart,
-                                    textCapitalization:
-                                        TextCapitalization.words,
-                                    decoration: const InputDecoration(
+                                    readOnly: true,
+                                    onTap: () => _choisirLieux(),
+                                    decoration: InputDecoration(
                                       labelText: 'Départ',
-                                      border: OutlineInputBorder(),
-                                      prefixIcon: Icon(Icons.trip_origin),
+                                      hintText: 'Adresse ou carte',
+                                      border: const OutlineInputBorder(),
+                                      prefixIcon: const Icon(Icons.hail),
+                                      suffixIcon: _lieuDepart == null
+                                          ? const Icon(Icons.map_outlined)
+                                          : IconButton(
+                                              tooltip: 'Effacer',
+                                              icon: const Icon(Icons.close),
+                                              onPressed: () => _effacerLieu(
+                                                  arrivee: false),
+                                            ),
                                     ),
                                   ),
                                   const SizedBox(height: 10),
                                   TextField(
                                     controller: _arrivee,
-                                    textCapitalization:
-                                        TextCapitalization.words,
-                                    decoration: const InputDecoration(
+                                    readOnly: true,
+                                    onTap: () =>
+                                        _choisirLieux(arrivee: true),
+                                    decoration: InputDecoration(
                                       labelText: 'Arrivée',
-                                      border: OutlineInputBorder(),
-                                      prefixIcon: Icon(Icons.place),
+                                      hintText: 'Adresse ou carte',
+                                      border: const OutlineInputBorder(),
+                                      prefixIcon: const Icon(Icons.flag),
+                                      suffixIcon: _lieuArrivee == null
+                                          ? const Icon(Icons.map_outlined)
+                                          : IconButton(
+                                              tooltip: 'Effacer',
+                                              icon: const Icon(Icons.close),
+                                              onPressed: () => _effacerLieu(
+                                                  arrivee: true),
+                                            ),
                                     ),
                                   ),
                                 ],

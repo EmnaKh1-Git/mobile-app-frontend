@@ -2,14 +2,17 @@
 //  MODULE : GESTION DES TRAJETS (Yassine)
 //  Fichier : lib/features/trajet/screens/detail_trajet_page.dart
 //  Écran : détail d'un trajet + réservation
+//  En haut : la carte avec la route (touchez-la pour l'agrandir)
 // ============================================================
 
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../models/trajet.dart';
+import '../services/carte_service.dart';
 import '../services/trajet_service.dart';
 import '../utils/trajet_format.dart';
+import '../widgets/carte_itineraire.dart';
 import '../widgets/trajet_card.dart';
 import 'publier_trajet_page.dart';
 
@@ -121,6 +124,10 @@ class DetailTrajetPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // ---- Carte de l'itinéraire ----
+          _CarteDuTrajet(trajet: trajet),
+          const SizedBox(height: 16),
+
           // ---- Date ----
           Row(
             children: [
@@ -308,6 +315,79 @@ class DetailTrajetPage extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Carte du trajet : tracé enregistré, sinon calculé à l'ouverture
+class _CarteDuTrajet extends StatefulWidget {
+  final Trajet trajet;
+  const _CarteDuTrajet({required this.trajet});
+
+  @override
+  State<_CarteDuTrajet> createState() => _CarteDuTrajetState();
+}
+
+class _CarteDuTrajetState extends State<_CarteDuTrajet> {
+  late Future<Itineraire?> _itineraire;
+
+  @override
+  void initState() {
+    super.initState();
+    _itineraire = CarteService.instance.itineraireDuTrajet(widget.trajet);
+  }
+
+  @override
+  void didUpdateWidget(covariant _CarteDuTrajet ancien) {
+    super.didUpdateWidget(ancien);
+    final a = ancien.trajet, t = widget.trajet;
+    // On ne recalcule que si l'itinéraire a changé (pas pour une réservation)
+    if (a.itineraire != t.itineraire ||
+        a.latDepart != t.latDepart ||
+        a.lngDepart != t.lngDepart ||
+        a.latArrivee != t.latArrivee ||
+        a.lngArrivee != t.lngArrivee ||
+        a.villeDepart != t.villeDepart ||
+        a.villeArrivee != t.villeArrivee) {
+      _itineraire = CarteService.instance.itineraireDuTrajet(t);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final t = widget.trajet;
+    return FutureBuilder<Itineraire?>(
+      future: _itineraire,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return Container(
+            height: 190,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const CircularProgressIndicator(),
+          );
+        }
+        final it = snap.data;
+        if (it == null) {
+          // Pas de réseau et pas de coordonnées : pas de carte
+          return const SizedBox.shrink();
+        }
+        return ApercuItineraire(
+          depart: it.depart,
+          arrivee: it.arrivee,
+          trace: it.points,
+          approximatif: it.approximatif,
+          hauteur: 190,
+          titre: '${t.villeDepart} → ${t.villeArrivee}',
+          sousTitre:
+              '${(t.distanceKm > 0 ? t.distanceKm : it.distanceKm).toStringAsFixed(0)} km'
+              ' • ${tDuree(t.dureeMinutes)}',
+        );
+      },
     );
   }
 }

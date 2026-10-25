@@ -6,14 +6,26 @@
 //
 //  PublierTrajetPage()                        -> nouveau trajet (INSERT)
 //  PublierTrajetPage(trajetAModifier: t)      -> modification   (UPDATE)
+//
+//  Étape 1 « Itinéraire » (comme inDrive) : départ et arrivée choisis
+//  par recherche d'adresse ou sur la carte ; la route est tracée et la
+//  distance / la durée sont calculées automatiquement.
+//  Étape 2 : prix par place avec − / + et prix recommandé (TarifService).
 // ============================================================
 
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../models/lieu.dart';
 import '../../../models/trajet.dart';
+import '../services/carte_service.dart';
+import '../services/tarif_service.dart';
 import '../services/trajet_service.dart';
 import '../utils/trajet_format.dart';
+import '../widgets/carte_itineraire.dart';
+import '../widgets/prix_propose.dart';
+import 'choix_itineraire_page.dart';
 
 class PublierTrajetPage extends StatefulWidget {
   /// Trajet à modifier ; null pour publier un nouveau trajet
@@ -30,43 +42,22 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
 
   bool get _modeModification => widget.trajetAModifier != null;
 
-  @override
-  void initState() {
-    super.initState();
-    // Mode modification : on pré-remplit le formulaire avec le trajet existant
-    final t = widget.trajetAModifier;
-    if (t != null) {
-      _depart.text = t.villeDepart;
-      _adresseDepart.text = t.adresseDepart;
-      _arrivee.text = t.villeArrivee;
-      _adresseArrivee.text = t.adresseArrivee;
-      _distance.text = t.distanceKm > 0 ? t.distanceKm.toStringAsFixed(0) : '';
-      _date = DateTime(t.dateDepart.year, t.dateDepart.month, t.dateDepart.day);
-      _heure = TimeOfDay.fromDateTime(t.dateDepart);
-      _duree = t.dureeMinutes.clamp(15, 480);
-      _places = t.placesTotales.clamp(1, maCapacite);
-      _prix = t.prixPlace.clamp(0.0, 100.0);
-      _bagages = t.bagages;
-      _fumeur = t.fumeur;
-      _animaux = t.animaux;
-      _reservationAuto = t.reservationAuto;
-      _description.text = t.description;
-    }
-  }
-
-  // Étape 1 : itinéraire
-  final _depart = TextEditingController();
-  final _adresseDepart = TextEditingController();
-  final _arrivee = TextEditingController();
-  final _adresseArrivee = TextEditingController();
-  final _distance = TextEditingController();
+  // Étape 1 : itinéraire (carte)
+  Lieu? _lieuDepart;
+  Lieu? _lieuArrivee;
+  Itineraire? _itineraire;
+  bool _calculEnCours = false;
+  int _calcul = 0; // numéro du dernier calcul (ignore les réponses périmées)
 
   // Étape 2 : date, places, prix
   DateTime? _date;
   TimeOfDay? _heure;
   int _duree = 60;
   int _places = 2;
-  double _prix = 10;
+  double _prix = 0;
+
+  /// false : le prix suit le prix recommandé ; true : choisi à la main
+  bool _prixModifie = false;
 
   // Étape 3 : options
   bool _bagages = true;
@@ -76,12 +67,29 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
   final _description = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Mode modification : on pré-remplit le formulaire avec le trajet existant
+    final t = widget.trajetAModifier;
+    if (t != null) {
+      _date = DateTime(t.dateDepart.year, t.dateDepart.month, t.dateDepart.day);
+      _heure = TimeOfDay.fromDateTime(t.dateDepart);
+      _duree = t.dureeMinutes.clamp(5, 600);
+      _places = t.placesTotales.clamp(1, maCapacite);
+      _prix = t.prixPlace;
+      _prixModifie = true; // on garde le prix choisi par le conducteur
+      _bagages = t.bagages;
+      _fumeur = t.fumeur;
+      _animaux = t.animaux;
+      _reservationAuto = t.reservationAuto;
+      _description.text = t.description;
+      _calculEnCours = true;
+      _chargerItineraireExistant(t);
+    }
+  }
+
+  @override
   void dispose() {
-    _depart.dispose();
-    _adresseDepart.dispose();
-    _arrivee.dispose();
-    _adresseArrivee.dispose();
-    _distance.dispose();
     _description.dispose();
     super.dispose();
   }
@@ -92,20 +100,152 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
         _date!.year, _date!.month, _date!.day, _heure!.hour, _heure!.minute);
   }
 
-  double get _km => double.tryParse(_distance.text.replaceAll(',', '.')) ?? 0;
+  double get _km => _itineraire?.distanceKm ?? 0;
 
-  /// Prix conseillé : environ 0,25 DT par km
-  double get _prixConseille => _km <= 0 ? 0 : (_km * 0.25).roundToDouble();
+  EstimationPrix get _estimation => TarifService.estimer(
+        distanceKm: _km,
+        places: _places,
+        depart: _dateHeure,
+      );
+
+  /// Le prix suit le prix recommandé tant que le conducteur ne l'a pas changé
+  void _suivrePrixRecommande() {
+    if (!_prixModifie) _prix = _estimation.prixIdeal;
+  }
+
+  // ------------------------------------------------------------
+  // ITINÉRAIRE
+  // ------------------------------------------------------------
+
+  /// Modification : lieux et tracé du trajet existant
+  Future<void> _chargerItineraireExistant(Trajet t) async {
+    Lieu lieu(String adresse, String ville, double lat, double lng) => Lieu(
+        nom: adresse.isNotEmpty ? adresse : ville,
+        ville: ville,
+        lat: lat,
+        lng: lng);
+
+    if (t.aCoordonnees) {
+      _lieuDepart = lieu(t.adresseDepart, t.villeDepart, t.latDepart!, t.lngDepart!);
+      _lieuArrivee =
+          lieu(t.adresseArrivee, t.villeArrivee, t.latArrivee!, t.lngArrivee!);
+    }
+
+    final it = await CarteService.instance.itineraireDuTrajet(t);
+    if (!mounted) return;
+    setState(() {
+      _calculEnCours = false;
+      if (it == null) return;
+      _itineraire = it;
+      // Ancien trajet sans coordonnées : on garde les noms d'origine
+      _lieuDepart ??= lieu(t.adresseDepart, t.villeDepart,
+          it.depart.latitude, it.depart.longitude);
+      _lieuArrivee ??= lieu(t.adresseArrivee, t.villeArrivee,
+          it.arrivee.latitude, it.arrivee.longitude);
+    });
+  }
+
+  Future<void> _choisirItineraire({bool arrivee = false}) async {
+    final res = await Navigator.push<ItineraireChoisi>(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ChoixItinerairePage(
+          depart: _lieuDepart,
+          arrivee: _lieuArrivee,
+          modifierArrivee: arrivee,
+        ),
+      ),
+    );
+    if (res == null || !mounted) return;
+    setState(() {
+      _lieuDepart = res.depart;
+      _lieuArrivee = res.arrivee;
+    });
+    _calculerItineraire();
+  }
+
+  void _inverser() {
+    setState(() {
+      final tmp = _lieuDepart;
+      _lieuDepart = _lieuArrivee;
+      _lieuArrivee = tmp;
+    });
+    _calculerItineraire();
+  }
+
+  /// Route, distance et durée entre les deux lieux (OSRM)
+  Future<void> _calculerItineraire() async {
+    final a = _lieuDepart, b = _lieuArrivee;
+    if (a == null || b == null) return;
+    final n = ++_calcul;
+    setState(() {
+      _calculEnCours = true;
+      _itineraire = null;
+    });
+    final it = await CarteService.instance
+        .itineraire(LatLng(a.lat, a.lng), LatLng(b.lat, b.lng));
+    if (!mounted || n != _calcul) return;
+    setState(() {
+      _calculEnCours = false;
+      _itineraire = it;
+      _duree = it.dureeMinutes.clamp(5, 600);
+      _suivrePrixRecommande();
+    });
+  }
+
+  // ------------------------------------------------------------
+  // NAVIGATION ENTRE LES ÉTAPES
+  // ------------------------------------------------------------
+
+  /// Message d'erreur si l'étape [etape] n'est pas complète
+  String? _erreurEtape(int etape) {
+    if (etape == 0) {
+      if (_lieuDepart == null || _lieuArrivee == null) {
+        return 'Choisissez le point de départ et la destination.';
+      }
+      if (_itineraire == null) {
+        return _calculEnCours
+            ? 'Calcul de l’itinéraire en cours…'
+            : 'Itinéraire non calculé : réessayez.';
+      }
+    }
+    if (etape == 1 && _dateHeure == null) {
+      return 'Veuillez choisir la date et l’heure de départ.';
+    }
+    return null;
+  }
+
+  void _allerA(int cible) {
+    for (var e = 0; e < cible; e++) {
+      final err = _erreurEtape(e);
+      if (err != null) {
+        _erreur(err);
+        setState(() => _etape = e);
+        return;
+      }
+    }
+    setState(() => _etape = cible);
+  }
+
+  // ------------------------------------------------------------
+  // PUBLICATION
+  // ------------------------------------------------------------
 
   bool _enCours = false;
 
   Future<void> _publier() async {
     if (_enCours) return;
-    final dh = _dateHeure;
-    if (dh == null) {
-      _erreur('Veuillez choisir la date et l’heure de départ.');
-      return;
+    for (var e = 0; e < 2; e++) {
+      final err = _erreurEtape(e);
+      if (err != null) {
+        _erreur(err);
+        setState(() => _etape = e);
+        return;
+      }
     }
+    final dh = _dateHeure!;
+    final d = _lieuDepart!, a = _lieuArrivee!, it = _itineraire!;
 
     final service = TrajetService.instance;
     final original = widget.trajetAModifier;
@@ -121,13 +261,20 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
       etapes: original?.etapes,
       statut: original?.statut ?? StatutTrajet.publie,
       dateCreation: original?.dateCreation,
-      villeDepart: _depart.text.trim(),
-      adresseDepart: _adresseDepart.text.trim(),
-      villeArrivee: _arrivee.text.trim(),
-      adresseArrivee: _adresseArrivee.text.trim(),
+      // Ville (pour la recherche) + adresse précise (pour le rendez-vous)
+      villeDepart: d.villeOuNom,
+      adresseDepart: d.nom == d.villeOuNom ? '' : d.nom,
+      villeArrivee: a.villeOuNom,
+      adresseArrivee: a.nom == a.villeOuNom ? '' : a.nom,
+      latDepart: d.lat,
+      lngDepart: d.lng,
+      latArrivee: a.lat,
+      lngArrivee: a.lng,
+      itineraire:
+          it.approximatif ? '' : encoderPolyline(simplifierTrace(it.points)),
       dateDepart: dh,
       dureeMinutes: _duree,
-      distanceKm: _km,
+      distanceKm: double.parse(it.distanceKm.toStringAsFixed(1)),
       placesTotales: _places,
       prixPlace: _prix,
       bagages: _bagages,
@@ -161,15 +308,22 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
   }
 
   void _erreur(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: Colors.red.shade700),
-    );
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: Colors.red.shade700),
+      );
   }
+
+  // ------------------------------------------------------------
+  // INTERFACE
+  // ------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     const bordure = OutlineInputBorder();
+    final estimation = _estimation;
 
     return Scaffold(
       appBar: AppBar(
@@ -178,10 +332,10 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
       ),
       body: Stepper(
         currentStep: _etape,
-        onStepTapped: (i) => setState(() => _etape = i),
+        onStepTapped: _allerA,
         onStepContinue: () {
           if (_etape < 2) {
-            setState(() => _etape++);
+            _allerA(_etape + 1);
           } else {
             _publier();
           }
@@ -213,65 +367,13 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
           // ============ ÉTAPE 1 : ITINÉRAIRE ============
           Step(
             title: const Text('Itinéraire'),
-            subtitle: _depart.text.isNotEmpty && _arrivee.text.isNotEmpty
-                ? Text('${_depart.text} → ${_arrivee.text}')
+            subtitle: _lieuDepart != null && _lieuArrivee != null
+                ? Text(
+                    '${_lieuDepart!.villeOuNom} → ${_lieuArrivee!.villeOuNom}')
                 : null,
             isActive: _etape >= 0,
             state: _etape > 0 ? StepState.complete : StepState.indexed,
-            content: Column(
-              children: [
-                TextField(
-                  controller: _depart,
-                  onChanged: (_) => setState(() {}),
-                  textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(
-                    labelText: 'Ville de départ *',
-                    border: bordure,
-                    prefixIcon: Icon(Icons.trip_origin),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _adresseDepart,
-                  decoration: const InputDecoration(
-                    labelText: 'Point de rendez-vous',
-                    helperText: 'Ex : Place Barcelone, station Total…',
-                    border: bordure,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _arrivee,
-                  onChanged: (_) => setState(() {}),
-                  textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(
-                    labelText: 'Ville d’arrivée *',
-                    border: bordure,
-                    prefixIcon: Icon(Icons.place),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _adresseArrivee,
-                  decoration: const InputDecoration(
-                    labelText: 'Point de dépose',
-                    border: bordure,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _distance,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(
-                    labelText: 'Distance (km)',
-                    border: bordure,
-                    prefixIcon: Icon(Icons.straighten),
-                  ),
-                ),
-              ],
-            ),
+            content: _etapeItineraire(cs),
           ),
 
           // ============ ÉTAPE 2 : DATE, PLACES, PRIX ============
@@ -298,7 +400,12 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
                             lastDate:
                                 DateTime.now().add(const Duration(days: 180)),
                           );
-                          if (d != null) setState(() => _date = d);
+                          if (d != null) {
+                            setState(() {
+                              _date = d;
+                              _suivrePrixRecommande();
+                            });
+                          }
                         },
                         icon: const Icon(Icons.calendar_today, size: 18),
                         label: Text(
@@ -314,7 +421,12 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
                             initialTime:
                                 _heure ?? const TimeOfDay(hour: 8, minute: 0),
                           );
-                          if (t != null) setState(() => _heure = t);
+                          if (t != null) {
+                            setState(() {
+                              _heure = t;
+                              _suivrePrixRecommande();
+                            });
+                          }
                         },
                         icon: const Icon(Icons.schedule, size: 18),
                         label: Text(_heure == null
@@ -327,11 +439,17 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
                 const SizedBox(height: 20),
                 Text('Durée estimée : ${tDuree(_duree)}',
                     style: const TextStyle(fontWeight: FontWeight.w600)),
+                if (_itineraire != null)
+                  Text(
+                    'Calculée d’après l’itinéraire '
+                    '(${tDuree(_itineraire!.dureeMinutes)}) — ajustable',
+                    style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                  ),
                 Slider(
-                  value: _duree.toDouble(),
-                  min: 15,
-                  max: 480,
-                  divisions: 31,
+                  value: _duree.toDouble().clamp(5.0, 600.0),
+                  min: 5,
+                  max: 600,
+                  divisions: 119,
                   label: tDuree(_duree),
                   onChanged: (v) => setState(() => _duree = v.round()),
                 ),
@@ -345,58 +463,27 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
                       ButtonSegment(value: i, label: Text('$i')),
                   ],
                   selected: {_places},
-                  onSelectionChanged: (s) =>
-                      setState(() => _places = s.first),
+                  onSelectionChanged: (s) => setState(() {
+                    _places = s.first;
+                    _suivrePrixRecommande();
+                  }),
                 ),
                 const SizedBox(height: 20),
-                Row(
-                  children: [
-                    const Text('Prix par place',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
-                    const Spacer(),
-                    Text(tPrix(_prix),
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                            color: cs.primary)),
-                  ],
-                ),
-                Slider(
-                  value: _prix,
-                  min: 0,
-                  max: 100,
-                  divisions: 100,
-                  label: tPrix(_prix),
-                  onChanged: (v) => setState(() => _prix = v.roundToDouble()),
-                ),
-                if (_prixConseille > 0)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: cs.secondaryContainer,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.lightbulb_outline,
-                            size: 18, color: cs.onSecondaryContainer),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Prix conseillé : ${tPrix(_prixConseille)} '
-                            '(${_km.toStringAsFixed(0)} km)',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () => setState(
-                              () => _prix = _prixConseille.clamp(0.0, 100.0)),
-                          child: const Text('Appliquer'),
-                        ),
-                      ],
-                    ),
+                const Text('Prix par place',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 10),
+                if (_itineraire == null)
+                  const Text('Choisissez d’abord l’itinéraire (étape 1).')
+                else
+                  PrixPropose(
+                    prix: _prix,
+                    estimation: estimation,
+                    onChanged: (v) => setState(() {
+                      _prix = v;
+                      _prixModifie = v != estimation.prixIdeal;
+                    }),
                   ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Text(
                   'Gain estimé si complet : ${tPrix(_prix * _places)}',
                   style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
@@ -448,6 +535,7 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
                   maxLength: 200,
                   decoration: const InputDecoration(
                     labelText: 'Message pour les passagers',
+                    helperText: 'Ex : rendez-vous devant la station Total',
                     alignLabelWithHint: true,
                     border: bordure,
                   ),
@@ -464,15 +552,21 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
                         const Text('Récapitulatif',
                             style: TextStyle(fontWeight: FontWeight.bold)),
                         const SizedBox(height: 8),
-                        _ligne('Trajet',
-                            '${_depart.text.isEmpty ? "?" : _depart.text} → ${_arrivee.text.isEmpty ? "?" : _arrivee.text}'),
+                        _ligne('Départ', _lieuDepart?.libelleCourt ?? '?'),
+                        _ligne('Arrivée', _lieuArrivee?.libelleCourt ?? '?'),
                         _ligne(
-                            'Départ',
+                            'Distance',
+                            _itineraire == null
+                                ? '?'
+                                : '${_km.toStringAsFixed(1)} km • ${tDuree(_duree)}'),
+                        _ligne(
+                            'Date',
                             _dateHeure == null
-                                ? 'Non défini'
+                                ? 'Non définie'
                                 : '${tDateCourte(_dateHeure!)} à ${tHeure(_dateHeure!)}'),
                         _ligne('Places', '$_places'),
-                        _ligne('Prix', '${tPrix(_prix)} / place'),
+                        _ligne('Prix',
+                            _prix <= 0 ? 'Gratuit' : '${tPrix(_prix)} / place'),
                         _ligne('Véhicule', monVehicule),
                       ],
                     ),
@@ -486,9 +580,152 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
     );
   }
 
+  /// Contenu de l'étape 1 : départ / arrivée + carte + distance
+  Widget _etapeItineraire(ColorScheme cs) {
+    final d = _lieuDepart, a = _lieuArrivee, it = _itineraire;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // ---- Carte « De / À » comme inDrive ----
+        Container(
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  children: [
+                    _LigneLieu(
+                      icone: Icons.hail,
+                      label: 'De',
+                      lieu: d,
+                      indication: 'Point de départ',
+                      onTap: () => _choisirItineraire(),
+                    ),
+                    Divider(height: 1, indent: 52, color: cs.outlineVariant),
+                    _LigneLieu(
+                      icone: Icons.flag,
+                      label: 'À',
+                      lieu: a,
+                      indication: 'Destination',
+                      onTap: () => _choisirItineraire(arrivee: true),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Inverser départ et arrivée',
+                onPressed: d != null && a != null ? _inverser : null,
+                icon: const Icon(Icons.swap_vert),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // ---- Carte avec la route ----
+        if (d != null && a != null && it != null) ...[
+          ApercuItineraire(
+            depart: LatLng(d.lat, d.lng),
+            arrivee: LatLng(a.lat, a.lng),
+            trace: it.points,
+            approximatif: it.approximatif,
+            titre: '${d.villeOuNom} → ${a.villeOuNom}',
+            sousTitre:
+                '${it.distanceKm.toStringAsFixed(1)} km • ~${tDuree(it.dureeMinutes)}',
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Chip(
+                avatar: const Icon(Icons.straighten, size: 18),
+                label: Text('${it.distanceKm.toStringAsFixed(1)} km'),
+              ),
+              Chip(
+                avatar: const Icon(Icons.schedule, size: 18),
+                label: Text('~${tDuree(it.dureeMinutes)}'),
+              ),
+              Chip(
+                avatar: const Icon(Icons.payments_outlined, size: 18),
+                label: Text('Prix conseillé ${tPrix(_estimation.prixIdeal)}'),
+              ),
+            ],
+          ),
+          if (it.approximatif)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.wifi_off, size: 16, color: cs.error),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Pas de connexion : distance estimée à vol d’oiseau.',
+                      style: TextStyle(fontSize: 12, color: cs.error),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _calculerItineraire,
+                    child: const Text('Réessayer'),
+                  ),
+                ],
+              ),
+            ),
+        ] else if (_calculEnCours)
+          Container(
+            height: 200,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 12),
+                Text('Calcul de l’itinéraire…'),
+              ],
+            ),
+          )
+        else
+          // ---- Aucun itinéraire encore ----
+          InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => _choisirItineraire(arrivee: d != null),
+            child: Container(
+              height: 150,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: cs.outlineVariant),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.map_outlined, size: 40, color: cs.primary),
+                  const SizedBox(height: 8),
+                  const Text('Indiquez votre itinéraire',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  Text('La route, la distance et le prix seront calculés',
+                      style:
+                          TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _ligne(String label, String valeur) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 3),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(
                 width: 80,
@@ -501,4 +738,68 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
           ],
         ),
       );
+}
+
+/// Ligne « De » ou « À » de la carte d'itinéraire
+class _LigneLieu extends StatelessWidget {
+  final IconData icone;
+  final String label;
+  final Lieu? lieu;
+  final String indication;
+  final VoidCallback onTap;
+
+  const _LigneLieu({
+    required this.icone,
+    required this.label,
+    required this.lieu,
+    required this.indication,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final l = lieu;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 4, 12),
+        child: Row(
+          children: [
+            Icon(icone, size: 24),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style:
+                          TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+                  Text(
+                    l?.nom ?? indication,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: l == null ? cs.onSurfaceVariant : cs.onSurface,
+                    ),
+                  ),
+                  if (l != null && (l.adresse.isNotEmpty || l.ville.isNotEmpty))
+                    Text(
+                      l.adresse.isNotEmpty ? l.adresse : l.ville,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

@@ -6,6 +6,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../../../models/lieu.dart';
 import '../services/trajet_service.dart';
 import '../utils/trajet_format.dart';
 import '../widgets/trajet_card.dart';
@@ -14,6 +15,10 @@ import 'detail_trajet_page.dart';
 class ResultatsTrajetPage extends StatefulWidget {
   final String depart;
   final String arrivee;
+
+  /// Lieux choisis sur la carte (recherche par proximité, 15 km)
+  final Lieu? lieuDepart;
+  final Lieu? lieuArrivee;
   final DateTime? date;
   final int places;
 
@@ -21,6 +26,8 @@ class ResultatsTrajetPage extends StatefulWidget {
     super.key,
     required this.depart,
     required this.arrivee,
+    this.lieuDepart,
+    this.lieuArrivee,
     this.date,
     this.places = 1,
   });
@@ -135,6 +142,8 @@ class _ResultatsTrajetPageState extends State<ResultatsTrajetPage> {
           final liste = TrajetService.instance.rechercher(
             depart: widget.depart,
             arrivee: widget.arrivee,
+            lieuDepart: widget.lieuDepart,
+            lieuArrivee: widget.lieuArrivee,
             date: widget.date,
             placesMin: widget.places,
             prixMax: _prixMax,

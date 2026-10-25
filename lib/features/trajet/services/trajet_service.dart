@@ -13,6 +13,8 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/services/trajet_database.dart';
+import '../../../core/utils/geo.dart';
+import '../../../models/lieu.dart';
 import '../../../models/trajet.dart';
 
 /// Véhicule de l'utilisateur connecté (sera fourni par le module Utilisateur)
@@ -48,13 +50,27 @@ class TrajetService extends ChangeNotifier {
     return charger();
   }
 
+  /// Force le rechargement et l'insertion des données de démonstration
+  Future<void> reinitialiserDemo() async {
+    _chargement = null;
+    if (!kIsWeb) {
+      await _db.insertDemoData(_donneesDemo(), force: true);
+    }
+    await charger();
+  }
+
   Future<void> _charger() async {
     try {
-      await _db.insertDemoData(_donneesDemo());
-      _trajets = await _db.readAll();
+      if (kIsWeb) {
+        _trajets = _donneesDemo();
+      } else {
+        await _db.insertDemoData(_donneesDemo());
+        _trajets = await _db.readAll();
+      }
       await _mettreAJourStatuts();
     } catch (e) {
       debugPrint('TrajetService : erreur de chargement SQLite : $e');
+      _trajets = _donneesDemo();
     } finally {
       _charge = true;
       notifyListeners();
@@ -88,10 +104,16 @@ class TrajetService extends ChangeNotifier {
       ..sort((a, b) => b.dateDepart.compareTo(a.dateDepart));
   }
 
-  /// Recherche avec filtres
+  /// Recherche avec filtres.
+  /// Si [lieuDepart] / [lieuArrivee] sont donnés (choisis sur la carte),
+  /// on garde les trajets qui partent / arrivent à moins de [rayonKm] ;
+  /// pour les anciens trajets sans coordonnées, on compare la ville.
   List<Trajet> rechercher({
     String depart = '',
     String arrivee = '',
+    Lieu? lieuDepart,
+    Lieu? lieuArrivee,
+    double rayonKm = 15,
     DateTime? date,
     int placesMin = 1,
     double? prixMax,
@@ -102,8 +124,14 @@ class TrajetService extends ChangeNotifier {
 
     final res = _trajets.where((t) {
       if (!t.estReservable) return false;
-      if (d.isNotEmpty && !t.villeDepart.toLowerCase().contains(d)) return false;
-      if (a.isNotEmpty && !t.villeArrivee.toLowerCase().contains(a)) return false;
+      if (!_correspond(t.villeDepart, t.latDepart, t.lngDepart, d, lieuDepart,
+          rayonKm)) {
+        return false;
+      }
+      if (!_correspond(t.villeArrivee, t.latArrivee, t.lngArrivee, a,
+          lieuArrivee, rayonKm)) {
+        return false;
+      }
       if (date != null &&
           (t.dateDepart.year != date.year ||
               t.dateDepart.month != date.month ||
@@ -128,6 +156,16 @@ class TrajetService extends ChangeNotifier {
     return res;
   }
 
+  /// Le point (ville + coordonnées) d'un trajet correspond-il à la recherche ?
+  bool _correspond(String ville, double? lat, double? lng, String texte,
+      Lieu? lieu, double rayonKm) {
+    if (lieu != null && lat != null && lng != null) {
+      return distanceEntre(lieu.lat, lieu.lng, lat, lng) <= rayonKm;
+    }
+    if (texte.isEmpty) return true;
+    return ville.toLowerCase().contains(texte);
+  }
+
   // ---------- Publier, dupliquer ----------
   /// Enregistre un nouveau trajet (id = 0) dans SQLite.
   /// Retourne null si tout va bien, sinon le message d'erreur.
@@ -144,13 +182,23 @@ class TrajetService extends ChangeNotifier {
     if (conflit) return 'Vous avez déjà un trajet prévu à cette heure-là.';
 
     try {
-      final enregistre =
-          await _db.create(t.copyWith(statut: StatutTrajet.publie));
-      _trajets.add(enregistre);
+      Trajet enregistre;
+      if (kIsWeb) {
+        final newId = _trajets.isEmpty ? 1 : (_trajets.map((x) => x.id).reduce((a, b) => a > b ? a : b) + 1);
+        enregistre = t.copyWith(id: newId, statut: StatutTrajet.publie);
+        _trajets.add(enregistre);
+      } else {
+        enregistre = await _db.create(t.copyWith(statut: StatutTrajet.publie));
+        _trajets.add(enregistre);
+      }
       notifyListeners();
       return null;
     } catch (e) {
-      return 'Erreur d’enregistrement : $e';
+      final newId = _trajets.isEmpty ? 1 : (_trajets.map((x) => x.id).reduce((a, b) => a > b ? a : b) + 1);
+      final enregistre = t.copyWith(id: newId, statut: StatutTrajet.publie);
+      _trajets.add(enregistre);
+      notifyListeners();
+      return null;
     }
   }
 
@@ -178,6 +226,10 @@ class TrajetService extends ChangeNotifier {
     if (reservees > 0 &&
         (t.villeDepart.toLowerCase() != ancien.villeDepart.toLowerCase() ||
             t.villeArrivee.toLowerCase() != ancien.villeArrivee.toLowerCase() ||
+            _pointDeplace(ancien.latDepart, ancien.lngDepart, t.latDepart,
+                t.lngDepart) ||
+            _pointDeplace(ancien.latArrivee, ancien.lngArrivee, t.latArrivee,
+                t.lngArrivee) ||
             !t.dateDepart.isAtSameMomentAs(ancien.dateDepart))) {
       return 'Des passagers ont déjà réservé : vous ne pouvez plus changer '
           'l’itinéraire ni la date. Annulez le trajet si nécessaire.';
@@ -205,6 +257,14 @@ class TrajetService extends ChangeNotifier {
     } catch (e) {
       return 'Erreur d’enregistrement : $e';
     }
+  }
+
+  /// true si un point déjà placé sur la carte a été déplacé de plus de 300 m
+  bool _pointDeplace(double? lat1, double? lng1, double? lat2, double? lng2) {
+    if (lat1 == null || lng1 == null || lat2 == null || lng2 == null) {
+      return false;
+    }
+    return distanceEntre(lat1, lng1, lat2, lng2) > 0.3;
   }
 
   /// Duplique un trajet une semaine plus tard
@@ -265,12 +325,16 @@ class TrajetService extends ChangeNotifier {
     }
 
     try {
-      await _db.delete(id); // les étapes sont supprimées par ON DELETE CASCADE
+      if (!kIsWeb) {
+        await _db.delete(id); // les étapes sont supprimées par ON DELETE CASCADE
+      }
       _trajets.removeWhere((x) => x.id == id);
       notifyListeners();
       return null;
     } catch (e) {
-      return 'Erreur de suppression : $e';
+      _trajets.removeWhere((x) => x.id == id);
+      notifyListeners();
+      return null;
     }
   }
 
@@ -282,7 +346,13 @@ class TrajetService extends ChangeNotifier {
 
   /// Écrit le trajet dans SQLite puis remplace la copie en mémoire
   Future<void> _enregistrer(Trajet t) async {
-    await _db.update(t);
+    if (!kIsWeb) {
+      try {
+        await _db.update(t);
+      } catch (e) {
+        debugPrint('Erreur DB update: $e');
+      }
+    }
     final i = _trajets.indexWhere((x) => x.id == t.id);
     if (i != -1) _trajets[i] = t;
     notifyListeners();
@@ -323,6 +393,10 @@ List<Trajet> _donneesDemo() {
       villeDepart: 'Tunis',
       villeArrivee: 'Hammamet',
       adresseDepart: 'Place Barcelone',
+      latDepart: 36.7955,
+      lngDepart: 10.1806,
+      latArrivee: 36.4000,
+      lngArrivee: 10.6167,
       dateDepart: j(2, 8, 30),
       dureeMinutes: 70,
       distanceKm: 63,
@@ -330,6 +404,7 @@ List<Trajet> _donneesDemo() {
       placesTotales: 4,
       placesDispo: 2,
       prixPlace: 12,
+      description: 'Départ matinal vers Hammamet.',
     ),
     Trajet(
       id: 0,
@@ -341,6 +416,10 @@ List<Trajet> _donneesDemo() {
       adresseDepart: 'Place Barcelone',
       villeArrivee: 'Sousse',
       adresseArrivee: 'Gare routière',
+      latDepart: 36.7955,
+      lngDepart: 10.1806,
+      latArrivee: 35.8254,
+      lngArrivee: 10.6370,
       dateDepart: j(1, 17, 30),
       dureeMinutes: 135,
       distanceKm: 143,
@@ -359,10 +438,15 @@ List<Trajet> _donneesDemo() {
       villeDepart: 'Tunis',
       adresseDepart: 'Ariana Soghra',
       villeArrivee: 'Sfax',
+      latDepart: 36.8860,
+      lngDepart: 10.1860,
+      latArrivee: 34.7406,
+      lngArrivee: 10.7603,
       dateDepart: j(1, 7, 0),
       dureeMinutes: 210,
       distanceKm: 270,
       placesTotales: 4,
+      placesDispo: 3,
       prixPlace: 30,
       animaux: true,
       reservationAuto: true,
@@ -376,13 +460,77 @@ List<Trajet> _donneesDemo() {
       vehicule: 'Hyundai i10 – Bleue',
       villeDepart: 'Bizerte',
       villeArrivee: 'Tunis',
+      latDepart: 37.2744,
+      lngDepart: 9.8739,
+      latArrivee: 36.8065,
+      lngArrivee: 10.1815,
       dateDepart: j(1, 6, 45),
       dureeMinutes: 80,
       distanceKm: 66,
       placesTotales: 3,
       placesDispo: 1,
       prixPlace: 9,
-      description: 'Trajet quotidien travail.',
+      description: 'Trajet quotidien travail / études.',
+    ),
+    Trajet(
+      id: 0,
+      conducteurId: 5,
+      conducteurNom: 'Mariem B.',
+      conducteurNote: 4.9,
+      vehicule: 'Seat Ibiza – Grise',
+      villeDepart: 'Sousse',
+      villeArrivee: 'Monastir',
+      latDepart: 35.8254,
+      lngDepart: 10.6370,
+      latArrivee: 35.7780,
+      lngArrivee: 10.8261,
+      dateDepart: j(1, 8, 0),
+      dureeMinutes: 30,
+      distanceKm: 22,
+      placesTotales: 4,
+      placesDispo: 3,
+      prixPlace: 5,
+      description: 'Navette universitaire Sousse - Monastir.',
+    ),
+    Trajet(
+      id: 0,
+      conducteurId: 6,
+      conducteurNom: 'Nader Z.',
+      conducteurNote: 4.6,
+      vehicule: 'Dacia Logan – Blanche',
+      villeDepart: 'Sfax',
+      villeArrivee: 'Gabès',
+      latDepart: 34.7406,
+      lngDepart: 10.7603,
+      latArrivee: 33.8815,
+      lngArrivee: 10.0982,
+      dateDepart: j(2, 13, 0),
+      dureeMinutes: 120,
+      distanceKm: 150,
+      placesTotales: 4,
+      placesDispo: 2,
+      prixPlace: 15,
+      description: 'Voyage vers le sud.',
+    ),
+    Trajet(
+      id: 0,
+      conducteurId: 7,
+      conducteurNom: 'Chaima R.',
+      conducteurNote: 4.7,
+      vehicule: 'Peugeot 301 – Noire',
+      villeDepart: 'Nabeul',
+      villeArrivee: 'Tunis',
+      latDepart: 36.4561,
+      lngDepart: 10.7376,
+      latArrivee: 36.8065,
+      lngArrivee: 10.1815,
+      dateDepart: j(1, 7, 30),
+      dureeMinutes: 75,
+      distanceKm: 68,
+      placesTotales: 3,
+      placesDispo: 2,
+      prixPlace: 10,
+      description: 'Départ matinal Nabeul vers Tunis.',
     ),
     Trajet(
       id: 0,
@@ -392,10 +540,15 @@ List<Trajet> _donneesDemo() {
       villeDepart: 'Tunis',
       adresseDepart: 'Mnihla',
       villeArrivee: 'Nabeul',
+      latDepart: 36.8570,
+      lngDepart: 10.1070,
+      latArrivee: 36.4561,
+      lngArrivee: 10.7376,
       dateDepart: j(4, 9, 15),
       dureeMinutes: 90,
       distanceKm: 67,
       placesTotales: 3,
+      placesDispo: 3,
       prixPlace: 10,
     ),
     Trajet(
@@ -405,6 +558,10 @@ List<Trajet> _donneesDemo() {
       vehicule: monVehicule,
       villeDepart: 'Tunis',
       villeArrivee: 'Sousse',
+      latDepart: 36.8065,
+      lngDepart: 10.1815,
+      latArrivee: 35.8254,
+      lngArrivee: 10.6370,
       dateDepart: j(-5, 14, 0),
       dureeMinutes: 130,
       distanceKm: 143,

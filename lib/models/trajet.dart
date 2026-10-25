@@ -10,9 +10,16 @@
 //  Enregistré dans SQLite via toMap() / fromMap() (voir
 //  core/services/trajet_database.dart).
 //  Un trajet pas encore enregistré dans SQLite a id = 0.
+//
+//  Carte : les coordonnées GPS du départ et de l'arrivée
+//  (latDepart, lngDepart, latArrivee, lngArrivee) et le tracé de la
+//  route (itineraire, polyline encodée) sont facultatifs : les anciens
+//  trajets sans coordonnées restent valides.
 // ============================================================
 
 import 'package:flutter/material.dart';
+
+import '../core/utils/geo.dart';
 
 // ------------------------------------------------------------
 // 1. STATUT DU TRAJET (cycle de vie)
@@ -118,6 +125,16 @@ class Trajet {
   StatutTrajet statut;
   final DateTime dateCreation;
 
+  // ---- Carte (positions choisies comme sur inDrive) ----
+  final double? latDepart;
+  final double? lngDepart;
+  final double? latArrivee;
+  final double? lngArrivee;
+
+  /// Tracé de la route encodé (format « polyline » de Google, précision 1e-5).
+  /// Vide si inconnu : la page détail le recalcule.
+  final String itineraire;
+
   Trajet({
     required this.id,
     required this.conducteurId,
@@ -143,6 +160,11 @@ class Trajet {
     this.description = '',
     this.statut = StatutTrajet.publie,
     DateTime? dateCreation,
+    this.latDepart,
+    this.lngDepart,
+    this.latArrivee,
+    this.lngArrivee,
+    this.itineraire = '',
   })  : placesDispo = placesDispo ?? placesTotales,
         etapes = etapes ?? const <Etape>[],
         dateCreation = dateCreation ?? DateTime.now();
@@ -156,12 +178,27 @@ class Trajet {
   String get initialeConducteur =>
       conducteurNom.isNotEmpty ? conducteurNom[0].toUpperCase() : '?';
 
+  /// true si le départ et l'arrivée ont été placés sur la carte
+  bool get aCoordonnees =>
+      latDepart != null &&
+      lngDepart != null &&
+      latArrivee != null &&
+      lngArrivee != null;
+
   // ---- RÈGLES DE GESTION (vérifiées avant publication) ----
   /// Retourne null si le trajet est valide, sinon le message d'erreur.
   String? valider() {
     if (villeDepart.trim().isEmpty) return 'La ville de départ est obligatoire.';
     if (villeArrivee.trim().isEmpty) return "La ville d'arrivée est obligatoire.";
-    if (villeDepart.trim().toLowerCase() == villeArrivee.trim().toLowerCase()) {
+    if (aCoordonnees) {
+      // Positions sur la carte : on accepte les trajets dans la même ville
+      // (ex. El Mourouj -> Cité des Sous-Officiers) s'ils sont assez éloignés
+      if (distanceEntre(latDepart!, lngDepart!, latArrivee!, lngArrivee!) <
+          0.5) {
+        return "Le départ et l'arrivée sont trop proches (moins de 500 m).";
+      }
+    } else if (villeDepart.trim().toLowerCase() ==
+        villeArrivee.trim().toLowerCase()) {
       return "Les villes de départ et d'arrivée doivent être différentes.";
     }
     if (dateDepart.isBefore(DateTime.now().add(const Duration(minutes: 30)))) {
@@ -211,6 +248,11 @@ class Trajet {
         description: description,
         statut: statut ?? this.statut,
         dateCreation: dateCreation,
+        latDepart: latDepart,
+        lngDepart: lngDepart,
+        latArrivee: latArrivee,
+        lngArrivee: lngArrivee,
+        itineraire: itineraire,
       );
 
   // ------------------------------------------------------------
@@ -242,6 +284,11 @@ class Trajet {
         'description': description,
         'statut': statut.name,
         'date_creation': dateCreation.toIso8601String(),
+        'lat_depart': latDepart,
+        'lng_depart': lngDepart,
+        'lat_arrivee': latArrivee,
+        'lng_arrivee': lngArrivee,
+        'itineraire': itineraire,
       };
 
   factory Trajet.fromMap(Map<String, dynamic> m, {List<Etape>? etapes}) =>
@@ -275,5 +322,10 @@ class Trajet {
         dateCreation: m['date_creation'] != null
             ? DateTime.parse(m['date_creation'] as String)
             : null,
+        latDepart: (m['lat_depart'] as num?)?.toDouble(),
+        lngDepart: (m['lng_depart'] as num?)?.toDouble(),
+        latArrivee: (m['lat_arrivee'] as num?)?.toDouble(),
+        lngArrivee: (m['lng_arrivee'] as num?)?.toDouble(),
+        itineraire: (m['itineraire'] as String?) ?? '',
       );
 }
