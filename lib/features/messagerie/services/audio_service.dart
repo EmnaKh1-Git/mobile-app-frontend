@@ -14,7 +14,7 @@ class AudioService {
   String? _dernierCheminEnregistre;
 
   final AudioPlayer _player = AudioPlayer();
-  int? _messageIdEnCours;
+  String? _messageIdEnCours;
 
   String? get dernierCheminEnregistre => _dernierCheminEnregistre;
 
@@ -32,9 +32,14 @@ class AudioService {
   }
 
   Future<void> demarrerEnregistrement() async {
-    final dir = await getTemporaryDirectory();
+    final documents = await getApplicationDocumentsDirectory();
+    final dossier = Directory('${documents.path}/vocaux');
+    if (!await dossier.exists()) {
+      await dossier.create(recursive: true);
+    }
+
     final nomFichier = 'vocal_${DateTime.now().millisecondsSinceEpoch}.m4a';
-    _cheminEnCours = '${dir.path}/$nomFichier';
+    _cheminEnCours = '${dossier.path}/$nomFichier';
 
     const config = RecordConfig(
       encoder: AudioEncoder.aacLc,
@@ -63,7 +68,7 @@ class AudioService {
     }
   }
 
-  Future<void> jouer(int messageId, String? cheminAudio) async {
+  Future<void> jouer(String messageId, String? cheminAudio) async {
     if (cheminAudio == null || cheminAudio.isEmpty) {
       throw Exception('Vocal indisponible');
     }
@@ -104,7 +109,7 @@ class AudioService {
     _messageIdEnCours = null;
   }
 
-  int? get messageIdEnCours => _messageIdEnCours;
+  String? get messageIdEnCours => _messageIdEnCours;
 
   Future<void> dispose() async {
     await _player.dispose();

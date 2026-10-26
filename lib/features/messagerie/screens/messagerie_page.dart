@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../app/theme.dart';
 
 import '../../../core/utils/helpers.dart';
+
+import '../../user/models/user_model.dart';
 
 import '../models/conversation.dart';
 import '../services/messagerie_service.dart';
@@ -30,6 +34,12 @@ class _MessageriePageState extends State<MessageriePage> {
 
   String _recherche = '';
   String _filtre = 'tout'; // tout | privees | groupes
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(MessagerieService.instance.charger());
+  }
 
   @override
   void dispose() {
@@ -82,9 +92,11 @@ class _MessageriePageState extends State<MessageriePage> {
     if (!mounted) return;
 
     if (resultat == 'quitte') {
-      MessagerieService.instance.quitterGroupe(
+      await MessagerieService.instance.quitterGroupe(
         conversation.id,
       );
+
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -113,17 +125,51 @@ class _MessageriePageState extends State<MessageriePage> {
     );
   }
 
+  Future<void> _nouvelleConversationPrivee() async {
+    final destinataire =
+        await showModalBottomSheet<UserModel>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(24),
+        ),
+      ),
+      builder: (_) => const _FeuilleUtilisateurs(),
+    );
+
+    if (!mounted || destinataire == null) return;
+
+    try {
+      final conversation = await MessagerieService
+          .instance
+          .creerConversationPrivee(destinataire);
+      if (!mounted) return;
+      await _ouvrirConversation(conversation);
+    } on MessagerieException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: ListenableBuilder(
-          listenable: MessagerieService.instance,
-          builder: (context, _) {
-            final conversations =
-                _conversationsFiltrees;
+    return ListenableBuilder(
+      listenable: MessagerieService.instance,
+      builder: (context, _) {
+        final service = MessagerieService.instance;
+        final toutes = service.conversations();
+        final conversations = _conversationsFiltrees;
+        final connecte = service.estConnecte();
+        final enChargement =
+            service.estEnChargement && !service.estCharge;
 
-            return ListView(
+        return Scaffold(
+          body: SafeArea(
+            child: ListView(
               padding: const EdgeInsets.fromLTRB(
                 16,
                 16,
@@ -155,6 +201,14 @@ class _MessageriePageState extends State<MessageriePage> {
                     ),
                   ),
                 ),
+
+                IconButton.outlined(
+                  onPressed: _nouvelleConversationPrivee,
+                  icon: const Icon(Icons.person_add_alt_1_outlined),
+                  tooltip: 'Nouvelle conversation',
+                ),
+
+                const SizedBox(width: 8),
 
                 IconButton.outlined(
                   onPressed: () {
@@ -282,7 +336,42 @@ class _MessageriePageState extends State<MessageriePage> {
             // LISTE DES CONVERSATIONS
             // =====================================================
 
-            if (conversations.isEmpty)
+            if (enChargement)
+              const Padding(
+                padding: EdgeInsets.only(top: 24),
+                child: Center(
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (!connecte)
+              const Padding(
+                padding: EdgeInsets.only(top: 24),
+                child: Center(
+                  child: Text(
+                    'Connectez-vous pour accéder à vos messages',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.texte2,
+                    ),
+                  ),
+                ),
+              )
+            else if (toutes.isEmpty && _recherche.trim().isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 24),
+                child: Center(
+                  child: Text(
+                    'Aucune conversation. Appuyez sur + pour démarrer',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.texte2,
+                    ),
+                  ),
+                ),
+              )
+            else if (conversations.isEmpty)
               const Padding(
                 padding: EdgeInsets.only(top: 24),
                 child: Center(
@@ -307,25 +396,22 @@ class _MessageriePageState extends State<MessageriePage> {
               const SizedBox(height: 12),
             ],
               ],
-            );
-          },
-        ),
-      ),
-
-      // =========================================================
-      // BOUTON FLOTTANT — NOUVEAU GROUPE
-      // =========================================================
-
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 80),
-        child: FloatingActionButton.extended(
-          onPressed: _nouveauGroupe,
-          backgroundColor: AppColors.primaire,
-          foregroundColor: Colors.white,
-          icon: const Icon(Icons.group_add_outlined),
-          label: const Text('Nouveau groupe'),
-        ),
-      ),
+            ),
+          ),
+            floatingActionButton: connecte
+                ? Padding(
+                    padding: const EdgeInsets.only(bottom: 80),
+                    child: FloatingActionButton.extended(
+                      onPressed: _nouveauGroupe,
+                      backgroundColor: AppColors.primaire,
+                      foregroundColor: Colors.white,
+                      icon: const Icon(Icons.group_add_outlined),
+                      label: const Text('Nouveau groupe'),
+                    ),
+                  )
+                : null,
+        );
+      },
     );
   }
 }
@@ -553,6 +639,157 @@ class _CarteConversation extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// FEUILLE DE SÉLECTION D'UN UTILISATEUR (CONVERSATION PRIVÉE)
+// ============================================================
+
+class _FeuilleUtilisateurs extends StatefulWidget {
+  const _FeuilleUtilisateurs();
+
+  @override
+  State<_FeuilleUtilisateurs> createState() =>
+      _FeuilleUtilisateursState();
+}
+
+class _FeuilleUtilisateursState
+    extends State<_FeuilleUtilisateurs> {
+  late Future<List<UserModel>> _utilisateurs;
+
+  @override
+  void initState() {
+    super.initState();
+    _utilisateurs = MessagerieService.instance
+        .utilisateursDisponibles();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.7,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                8,
+              ),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Nouvelle conversation',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    icon: const Icon(Icons.close),
+                    tooltip: 'Fermer',
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: FutureBuilder<List<UserModel>>(
+                future: _utilisateurs,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState !=
+                      ConnectionState.done) {
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return const Center(
+                      child: Text(
+                        'Impossible de charger les '
+                        'utilisateurs.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.texte2,
+                        ),
+                      ),
+                    );
+                  }
+
+                  final utilisateurs =
+                      snapshot.data ?? const <UserModel>[];
+                  if (utilisateurs.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        'Aucun utilisateur disponible.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.texte2,
+                        ),
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                    ),
+                    itemCount: utilisateurs.length,
+                    itemBuilder: (context, index) {
+                      final utilisateur = utilisateurs[index];
+                      final nom = utilisateur.nomComplet.trim();
+                      final initiale =
+                          nom.isEmpty ? '?' : nom[0].toUpperCase();
+                      final avatar =
+                          (utilisateur.avatarUrl ?? '').trim();
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor:
+                              AppColors.primaireDoux,
+                          backgroundImage: avatar.isEmpty
+                              ? null
+                              : NetworkImage(avatar),
+                          child: avatar.isEmpty
+                              ? Text(
+                                  initiale,
+                                  style: const TextStyle(
+                                    color:
+                                        AppColors.primaire,
+                                    fontWeight:
+                                        FontWeight.w700,
+                                  ),
+                                )
+                              : null,
+                        ),
+                        title: Text(
+                          utilisateur.nomComplet,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        subtitle: utilisateur.email.trim().isEmpty
+                            ? null
+                            : Text(utilisateur.email),
+                        onTap: () {
+                          Navigator.pop(context, utilisateur);
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );

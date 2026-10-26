@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/theme.dart';
-
-import '../../../core/constants/app_constants.dart';
+import '../../../models/trajet.dart';
 
 import '../models/conversation.dart';
+import '../models/membre.dart';
+import '../services/contexte_utilisateur.dart';
 import '../services/messagerie_service.dart';
 
 // ============================================================
@@ -37,28 +38,30 @@ class _InfosGroupePageState
   // RÔLES ET DONNÉES
   // ---------------------------------------------------------
 
-  /// Le premier membre de la liste est le conducteur.
+  /// Vrai si l'utilisateur connecté est le créateur du groupe.
   bool get _jeConduis =>
-      _conversation.membres.isNotEmpty &&
-      _conversation.membres.first == monNom;
+      _conversation.createurId ==
+      ContexteUtilisateur.instance.idConnecte;
 
   /// Trajet associé au groupe.
-  TrajetPropose? get _trajet {
+  Trajet? get _trajet {
     final trajetId = _conversation.trajetId;
     if (trajetId == null) return null;
     return MessagerieService.instance.trajet(trajetId);
   }
 
   /// Passagers du trajet pas encore dans le groupe.
-  List<String> get _passagersEligibles {
+  List<Membre> get _passagersEligibles {
     final trajet = _trajet;
     if (trajet == null) return const [];
 
     final passagers = MessagerieService.instance
-        .passagersDuTrajet(trajet.id);
+        .passagersDuTrajet(trajet.id.toString());
 
     return passagers
-        .where((p) => !_conversation.membres.contains(p))
+        .where(
+          (p) => _conversation.membreParId(p.id) == null,
+        )
         .toList();
   }
 
@@ -76,17 +79,17 @@ class _InfosGroupePageState
       return;
     }
 
-    final choix = await showDialog<String>(
+    final choix = await showDialog<Membre>(
       context: context,
       builder: (context) => SimpleDialog(
         title: const Text('Ajouter un membre'),
         children: [
-          for (final nom in eligibles)
+          for (final membre in eligibles)
             SimpleDialogOption(
               onPressed: () {
-                Navigator.pop(context, nom);
+                Navigator.pop(context, membre);
               },
-              child: Text(nom),
+              child: Text(membre.nom),
             ),
         ],
       ),
@@ -94,7 +97,7 @@ class _InfosGroupePageState
 
     if (choix == null || !mounted) return;
 
-    _executer(
+    await _executer(
       () => MessagerieService.instance.ajouterMembre(
         widget.conversation.id,
         choix,
@@ -107,14 +110,14 @@ class _InfosGroupePageState
   // ---------------------------------------------------------
 
   Future<void> _confirmerRetrait(
-    String membre,
+    Membre membre,
   ) async {
     final confirme = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Retirer un membre ?'),
         content: Text(
-          '$membre ne fera plus partie du groupe.',
+          '${membre.nom} ne fera plus partie du groupe.',
         ),
         actions: [
           TextButton(
@@ -140,10 +143,10 @@ class _InfosGroupePageState
 
     if (confirme != true || !mounted) return;
 
-    _executer(
+    await _executer(
       () => MessagerieService.instance.retirerMembre(
         widget.conversation.id,
-        membre,
+        membre.id,
       ),
     );
   }
@@ -152,11 +155,11 @@ class _InfosGroupePageState
   // ANNULER UNE RÉSERVATION (simulation)
   // ---------------------------------------------------------
 
-  void _annulerReservation(String passager) {
-    _executer(
+  Future<void> _annulerReservation(Membre passager) async {
+    await _executer(
       () => MessagerieService.instance.annulerReservation(
         widget.conversation.id,
-        passager,
+        passager.id,
       ),
     );
   }
@@ -165,8 +168,8 @@ class _InfosGroupePageState
   // TERMINER LE TRAJET (simulation → groupe archivé)
   // ---------------------------------------------------------
 
-  void _terminerTrajet() {
-    _executer(
+  Future<void> _terminerTrajet() async {
+    await _executer(
       () => MessagerieService.instance.terminerTrajet(
         widget.conversation.id,
       ),
@@ -219,10 +222,13 @@ class _InfosGroupePageState
     );
   }
 
-  void _executer(void Function() action) {
+  Future<void> _executer(
+    Future<void> Function() action,
+  ) async {
     try {
-      action();
+      await action();
     } on MessagerieException catch (e) {
+      if (!mounted) return;
       _message(e.message);
     }
   }
@@ -396,19 +402,18 @@ class _InfosGroupePageState
 
             for (final membre in membres)
               _CarteMembre(
-                nom: membre,
-                conducteur:
-                    membres.first == membre,
+                nom: membre.nom,
+                conducteur: membre.estConducteur,
                 onRetirer: _jeConduis &&
                         !archivee &&
-                        membre != monNom
+                        membre.id !=
+                            ContexteUtilisateur.instance.idConnecte
                     ? () {
                         _confirmerRetrait(membre);
                       }
                     : null,
                 onAnnulerReservation:
-                    !archivee &&
-                            membres.first != membre
+                    !archivee && !membre.estConducteur
                         ? () {
                             _annulerReservation(
                               membre,
@@ -526,7 +531,7 @@ class _InfosGroupePageState
             const SizedBox(height: 20),
 
             // =====================================================
-            // TERMINER LE TRAJET (simulation)
+            // TERMINER LE TRAJET
             // =====================================================
 
             if (!archivee) ...[

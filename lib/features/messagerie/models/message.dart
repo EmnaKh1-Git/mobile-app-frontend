@@ -1,4 +1,4 @@
-import '../../../core/constants/app_constants.dart';
+import '../services/contexte_utilisateur.dart';
 
 // ============================================================
 // MODELE MESSAGE
@@ -27,8 +27,9 @@ class _Undefined {
 }
 
 class Message {
-  final int id;
-  final int expediteurId;
+  final String id;
+  final String? conversationId;
+  final String expediteurId;
   final String expediteurNom;
   final String contenu;
   final DateTime dateEnvoi;
@@ -46,6 +47,7 @@ class Message {
 
   const Message({
     required this.id,
+    this.conversationId,
     required this.expediteurId,
     required this.expediteurNom,
     required this.contenu,
@@ -73,20 +75,29 @@ class Message {
     bool? supprimePourMoi,
     DateTime? dateSuppression,
     Object? contenu = const _Undefined(),
+    Object? conversationId = const _Undefined(),
     Object? expediteurId = const _Undefined(),
     Object? expediteurNom = const _Undefined(),
+    Object? id = const _Undefined(),
+    Object? dateEnvoi = const _Undefined(),
+    Object? type = const _Undefined(),
   }) {
     return Message(
-      id: id,
+      id: id == const _Undefined() ? this.id : id as String,
+      conversationId: conversationId == const _Undefined()
+          ? this.conversationId
+          : conversationId as String?,
       expediteurId: expediteurId == const _Undefined()
           ? this.expediteurId
-          : expediteurId as int,
+          : expediteurId as String,
       expediteurNom: expediteurNom == const _Undefined()
           ? this.expediteurNom
           : expediteurNom as String,
       contenu: contenu == const _Undefined() ? this.contenu : contenu as String,
-      dateEnvoi: dateEnvoi,
-      type: type,
+      dateEnvoi: dateEnvoi == const _Undefined()
+          ? this.dateEnvoi
+          : dateEnvoi as DateTime,
+      type: type == const _Undefined() ? this.type : type as TypeMessage,
       statut: statut ?? this.statut,
       signalements: signalements ?? this.signalements,
       masque: masque ?? this.masque,
@@ -99,9 +110,76 @@ class Message {
     );
   }
 
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'conversation_id': conversationId,
+      'expediteur_id': expediteurId,
+      'expediteur_nom': expediteurNom,
+      'contenu': contenu,
+      'type': type.name,
+      'statut': statut.name,
+      'duree_secondes': dureeSecondes,
+      'chemin_audio': cheminAudio,
+      'ecoute': ecoute ? 1 : 0,
+      'signale': signalements > 0 ? 1 : 0,
+      'masque': masque ? 1 : 0,
+      'supprime_pour_tous': supprimePourTous ? 1 : 0,
+      'supprime_pour_moi': supprimePourMoi ? 1 : 0,
+      'date_envoi': dateEnvoi.toIso8601String(),
+      'date_suppression': dateSuppression?.toIso8601String(),
+    };
+  }
+
+  factory Message.fromMap(Map<String, dynamic> map) {
+    return Message(
+      id: map['id'].toString(),
+      conversationId: map['conversation_id']?.toString(),
+      expediteurId: map['expediteur_id'].toString(),
+      expediteurNom: map['expediteur_nom']?.toString() ?? '',
+      contenu: map['contenu']?.toString() ?? '',
+      dateEnvoi: DateTime.parse(map['date_envoi'].toString()),
+      type: _typeFromString(map['type']?.toString()),
+      statut: _statutFromString(map['statut']?.toString()),
+      signalements: (map['signale'] == 1 || map['signalements'] == 1) ? 1 : 0,
+      masque: map['masque'] == 1,
+      dureeSecondes: map['duree_secondes'] as int?,
+      cheminAudio: map['chemin_audio']?.toString(),
+      ecoute: map['ecoute'] == 1,
+      supprimePourTous: map['supprime_pour_tous'] == 1,
+      supprimePourMoi: map['supprime_pour_moi'] == 1,
+      dateSuppression: map['date_suppression'] != null
+          ? DateTime.parse(map['date_suppression'].toString())
+          : null,
+    );
+  }
+
+  static TypeMessage _typeFromString(String? s) {
+    switch (s) {
+      case 'vocal':
+        return TypeMessage.vocal;
+      case 'systeme':
+        return TypeMessage.systeme;
+      default:
+        return TypeMessage.texte;
+    }
+  }
+
+  static StatutMessage _statutFromString(String? s) {
+    switch (s) {
+      case 'livre':
+        return StatutMessage.livre;
+      case 'lu':
+        return StatutMessage.lu;
+      default:
+        return StatutMessage.envoye;
+    }
+  }
+
   bool get estSignale => signalements > 0;
-  bool get estMien => expediteurId == monId;
+  bool get estMien => expediteurId == ContexteUtilisateur.instance.idConnecte;
   bool get estSysteme => type == TypeMessage.systeme;
   bool get estVocal => type == TypeMessage.vocal;
   String get dureeVocalFormatee => formaterDureeVocale(dureeSecondes ?? 0);
 }
+

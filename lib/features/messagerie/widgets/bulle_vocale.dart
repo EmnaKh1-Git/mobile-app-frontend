@@ -55,7 +55,7 @@ class _BulleVocaleState extends State<BulleVocale> {
     super.initState();
 
     // Hauteurs stables, calculées depuis l'identifiant du message.
-    final aleatoire = Random(widget.message.id);
+    final aleatoire = Random(widget.message.id.hashCode);
     _barres = List<double>.generate(
       24,
       (_) => 0.3 + aleatoire.nextDouble() * 0.7,

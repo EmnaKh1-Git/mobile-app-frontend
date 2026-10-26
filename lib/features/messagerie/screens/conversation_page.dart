@@ -1,7 +1,6 @@
-import 'dart:io' as io;
+import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
 
 import '../../../app/theme.dart';
 
@@ -41,6 +40,8 @@ class _ConversationPageState
   final ScrollController _scrollCtrl =
       ScrollController();
 
+  bool _pret = false;
+
   @override
   void initState() {
     super.initState();
@@ -49,10 +50,21 @@ class _ConversationPageState
       widget.conversation.id,
     );
 
+    unawaited(_initialiser());
+  }
+
+  Future<void> _initialiser() async {
+    final service = MessagerieService.instance;
+
+    await service.chargerMessages(widget.conversation.id);
+    await service.marquerCommeLu(widget.conversation.id);
+
+    if (!mounted) return;
+    setState(() {
+      _pret = true;
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      MessagerieService.instance.marquerCommeLu(
-        widget.conversation.id,
-      );
       _defilerEnBas();
     });
   }
@@ -68,115 +80,6 @@ class _ConversationPageState
     super.dispose();
   }
 
-  // ---------------------------------------------------------
-  // SIMULER UN MESSAGE REÇU
-  // ---------------------------------------------------------
-
-  void _simulerMessageRecu() {
-    String? notification;
-
-    try {
-      notification = MessagerieService.instance
-          .simulerMessageRecu(widget.conversation.id);
-    } on MessagerieException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
-      return;
-    }
-
-    if (notification != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(notification)),
-      );
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _defilerEnBas();
-    });
-  }
-
-  /// Simule la réception d'un vocal avec le dernier vocal enregistré.
-  Future<void> _simulerVocalRecu() async {
-    final chemin = AudioService.instance.dernierCheminEnregistre;
-    if (chemin == null || chemin.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Enregistrez d\'abord un vocal pour pouvoir simuler un vocal reçu',
-          ),
-        ),
-      );
-      return;
-    }
-
-    final fichier = io.File(chemin);
-    if (!await fichier.exists()) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Enregistrez d\'abord un vocal pour pouvoir simuler un vocal reçu',
-          ),
-        ),
-      );
-      return;
-    }
-
-    int duree = 3;
-    try {
-      final player = AudioPlayer();
-      await player.setAudioSource(AudioSource.file(chemin));
-      final d = await player.durationStream.first;
-      if (d != null && d.inSeconds > 0) {
-        duree = d.inSeconds;
-      }
-      await player.dispose();
-    } catch (_) {
-      duree = 3;
-    }
-
-    String? notification;
-
-    try {
-      notification = MessagerieService.instance.simulerVocalRecu(
-        widget.conversation.id,
-        duree,
-        cheminAudio: chemin,
-      );
-    } on MessagerieException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
-      return;
-    }
-
-    // Mettre à jour le dernier message vocal avec le chemin audio
-    final messages =
-        MessagerieService.instance.messagesDe(widget.conversation.id);
-    if (messages.isNotEmpty) {
-      final dernier = messages.last;
-      if (dernier.type == TypeMessage.vocal &&
-          dernier.cheminAudio == null) {
-        // On ne peut pas modifier directement la liste mock, mais on peut
-        // forcer via le service si nécessaire - on laisse tel quel car
-        // simulerVocalRecu crée un nouveau message; mieux de le patcher
-      }
-    }
-
-    if (notification != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(notification)),
-      );
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _defilerEnBas();
-    });
-  }
-
   /// Conversation toujours à jour dans le service
   /// (membres et mode muet modifiables depuis les infos).
   Conversation get _conversation =>
@@ -184,28 +87,6 @@ class _ConversationPageState
         widget.conversation.id,
       ) ??
       widget.conversation;
-
-  void _simulerSuppressionRecu() {
-    String? notification;
-    try {
-      notification = MessagerieService.instance
-          .simulerSuppressionMessageRecu(widget.conversation.id);
-    } on MessagerieException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
-      return;
-    }
-    if (notification != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(notification)),
-      );
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _defilerEnBas();
-    });
-  }
 
   // ---------------------------------------------------------
   // DÉFILEMENT VERS LE BAS
@@ -263,17 +144,19 @@ class _ConversationPageState
     bool masque;
 
     try {
-      masque = MessagerieService.instance.envoyerMessage(
+      masque = await MessagerieService.instance.envoyerMessage(
         widget.conversation.id,
         texte,
       );
     } on MessagerieException catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
       return;
     }
 
+    if (!mounted) return;
     _saisieCtrl.clear();
 
     if (masque) {
@@ -329,17 +212,20 @@ class _ConversationPageState
     if (motif == null || !mounted) return;
 
     try {
-      MessagerieService.instance.signalerMessage(
+      await MessagerieService.instance.signalerMessage(
         widget.conversation.id,
         message.id,
+        motif: motif,
       );
     } on MessagerieException catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
       return;
     }
 
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -353,12 +239,13 @@ class _ConversationPageState
   // BLOQUER / DÉBLOQUER (conversation privée)
   // ---------------------------------------------------------
 
-  void _basculerBloque() {
+  Future<void> _basculerBloque() async {
     try {
-      MessagerieService.instance.basculerBloque(
+      await MessagerieService.instance.basculerBloque(
         widget.conversation.id,
       );
     } on MessagerieException catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message)),
       );
@@ -525,9 +412,9 @@ class _ConversationPageState
     );
   }
 
-  void _supprimerPourMoi(Message message) {
+  Future<void> _supprimerPourMoi(Message message) async {
     try {
-      MessagerieService.instance.supprimerPourMoi(
+      await MessagerieService.instance.supprimerPourMoi(
         widget.conversation.id,
         message.id,
       );
@@ -553,9 +440,9 @@ class _ConversationPageState
     );
   }
 
-  void _supprimerPourTous(Message message) {
+  Future<void> _supprimerPourTous(Message message) async {
     try {
-      MessagerieService.instance.supprimerPourTous(
+      await MessagerieService.instance.supprimerPourTous(
         widget.conversation.id,
         message.id,
       );
@@ -623,6 +510,31 @@ class _ConversationPageState
       listenable: MessagerieService.instance,
       builder: (context, _) {
         final conversation = _conversation;
+
+        final messagesPretes = _pret &&
+            MessagerieService.instance.messagesChargees(
+              conversation.id,
+            );
+
+        if (!messagesPretes) {
+          return Scaffold(
+            appBar: AppBar(
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.white,
+              title: Text(
+                conversation.titre,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            body: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
         final messages =
             MessagerieService.instance.messagesDe(
           conversation.id,
@@ -907,42 +819,6 @@ class _ConversationPageState
               ],
             ),
             actions: [
-                PopupMenuButton<String>(
-                  enabled: !archivee,
-                  tooltip: 'Simuler',
-                  icon: const Icon(
-                    Icons.mark_email_unread_outlined,
-                  ),
-                  onSelected: (valeur) {
-                    if (valeur == 'texte') {
-                      _simulerMessageRecu();
-                    } else if (valeur == 'vocal') {
-                      _simulerVocalRecu();
-                    } else if (valeur == 'supprimer') {
-                      _simulerSuppressionRecu();
-                    }
-                  },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem<String>(
-                      value: 'texte',
-                      child: Text(
-                        'Simuler un message reçu',
-                      ),
-                    ),
-                    PopupMenuItem<String>(
-                      value: 'vocal',
-                      child: Text(
-                        'Simuler un vocal reçu',
-                      ),
-                    ),
-                    PopupMenuItem<String>(
-                      value: 'supprimer',
-                      child: Text(
-                        'Simuler la suppression d\'un message reçu',
-                      ),
-                    ),
-                  ],
-                ),
               const SizedBox(width: 4),
               IconButton.outlined(
                 onPressed: _ouvrirInfos,

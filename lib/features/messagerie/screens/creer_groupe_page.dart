@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../app/theme.dart';
 
-import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/helpers.dart';
+import '../../../models/trajet.dart';
 
+import '../../trajet/services/trajet_service.dart';
+
+import '../models/membre.dart';
 import '../services/messagerie_service.dart';
 
 // ============================================================
@@ -24,8 +29,17 @@ class _CreerGroupePageState
   final TextEditingController _nomCtrl =
       TextEditingController();
 
-  TrajetPropose? _trajetChoisi;
+  Trajet? _trajetChoisi;
   final Set<String> _passagersChoisis = {};
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(TrajetService.instance.charger());
+    unawaited(
+      MessagerieService.instance.chargerUtilisateurs(),
+    );
+  }
 
   @override
   void dispose() {
@@ -37,7 +51,7 @@ class _CreerGroupePageState
   // SÉLECTION D'UN TRAJET
   // ---------------------------------------------------------
 
-  void _choisirTrajet(TrajetPropose trajet) {
+  void _choisirTrajet(Trajet trajet) {
     setState(() {
       _trajetChoisi = trajet;
       _passagersChoisis.clear();
@@ -48,7 +62,7 @@ class _CreerGroupePageState
   // VALIDATION ET CRÉATION
   // ---------------------------------------------------------
 
-  void _creerGroupe() {
+  Future<void> _creerGroupe() async {
     final nom = _nomCtrl.text.trim();
 
     if (_trajetChoisi == null) {
@@ -69,19 +83,20 @@ class _CreerGroupePageState
     }
 
     try {
-      MessagerieService.instance.creerGroupe(
+      await MessagerieService.instance.creerGroupe(
         titre: nom,
         trajet: _trajetChoisi!,
-        membres: [
-          monNom,
-          ..._passagersChoisis,
-        ],
+        membres: _passagersDisponibles
+            .where((p) => _passagersChoisis.contains(p.id))
+            .toList(),
       );
     } on MessagerieException catch (e) {
+      if (!mounted) return;
       _erreur(e.message);
       return;
     }
 
+    if (!mounted) return;
     Navigator.pop(context, nom);
   }
 
@@ -95,18 +110,21 @@ class _CreerGroupePageState
   // PASSAGERS DU TRAJET CHOISI
   // ---------------------------------------------------------
 
-  List<String> get _passagersDisponibles {
+  List<Membre> get _passagersDisponibles {
     final trajet = _trajetChoisi;
     if (trajet == null) return const [];
     return MessagerieService.instance.passagersDuTrajet(
-      trajet.id,
+      trajet.id.toString(),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: MessagerieService.instance,
+      listenable: Listenable.merge([
+        MessagerieService.instance,
+        TrajetService.instance,
+      ]),
       builder: (context, _) {
         final trajets = MessagerieService.instance
             .trajetsConducteur();
@@ -167,18 +185,28 @@ class _CreerGroupePageState
 
             const SizedBox(height: 12),
 
-            for (final trajet in trajets) ...[
-              _CarteTrajet(
-                trajet: trajet,
-                selectionne:
-                    _trajetChoisi?.id == trajet.id,
-                onTap: () {
-                  _choisirTrajet(trajet);
-                },
-              ),
+            if (trajets.isEmpty)
+              const Text(
+                'Aucun trajet à venir dont vous êtes le '
+                'conducteur.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppColors.texte2,
+                ),
+              )
+            else
+              for (final trajet in trajets) ...[
+                _CarteTrajet(
+                  trajet: trajet,
+                  selectionne:
+                      _trajetChoisi?.id == trajet.id,
+                  onTap: () {
+                    _choisirTrajet(trajet);
+                  },
+                ),
 
-              const SizedBox(height: 12),
-            ],
+                const SizedBox(height: 12),
+              ],
 
             const SizedBox(height: 8),
 
@@ -250,25 +278,39 @@ class _CreerGroupePageState
                 ),
               ),
 
+            if (_trajetChoisi != null &&
+                _passagersDisponibles.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 10),
+                child: Text(
+                  'Aucun passager inscrit avec une '
+                  'réservation confirmée pour ce trajet.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.texte2,
+                  ),
+                ),
+              ),
+
             for (final passager
                 in _passagersDisponibles)
               _CasePassager(
-                nom: passager,
+                nom: passager.nom,
                 coche:
                     _passagersChoisis.contains(
-                  passager,
+                  passager.id,
                 ),
                 onTap: () {
                   setState(() {
                     if (_passagersChoisis.contains(
-                      passager,
+                      passager.id,
                     )) {
                       _passagersChoisis.remove(
-                        passager,
+                        passager.id,
                       );
                     } else {
                       _passagersChoisis.add(
-                        passager,
+                        passager.id,
                       );
                     }
                   });
@@ -312,7 +354,7 @@ class _CreerGroupePageState
 // ============================================================
 
 class _CarteTrajet extends StatelessWidget {
-  final TrajetPropose trajet;
+  final Trajet trajet;
   final bool selectionne;
   final VoidCallback onTap;
 
@@ -364,7 +406,8 @@ class _CarteTrajet extends StatelessWidget {
                       CrossAxisAlignment.start,
                   children: [
                     Text(
-                      trajet.label,
+                      '${trajet.villeDepart} → '
+                      '${trajet.villeArrivee}',
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight:

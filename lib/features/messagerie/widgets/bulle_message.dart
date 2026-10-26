@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../../app/theme.dart';
 
-import '../../../core/constants/app_constants.dart';
 import '../../../core/utils/helpers.dart';
 
 import '../models/message.dart';
@@ -217,7 +216,7 @@ class BulleMessage extends StatelessWidget {
   }
 
   Widget _messageSupprime() {
-    final estGroupe = afficherNom || message.expediteurId != monId;
+    final estGroupe = afficherNom || !message.estMien;
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),

@@ -16,7 +16,7 @@ import 'enregistreur_vocal.dart';
 class BarreSaisie extends StatefulWidget {
   final TextEditingController controller;
   final VoidCallback onEnvoyer;
-  final int conversationId;
+  final String conversationId;
   final bool enabled;
 
   /// Explication affichée si le micro est désactivé.
@@ -160,7 +160,7 @@ class _BarreSaisieState extends State<BarreSaisie> {
     });
 
     try {
-      MessagerieService.instance.envoyerVocal(
+      await MessagerieService.instance.envoyerVocal(
         widget.conversationId,
         duree,
         chemin,
