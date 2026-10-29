@@ -1,4 +1,6 @@
 import 'package:sqflite/sqflite.dart';
+import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/services/database_service.dart';
 import '../models/conversation.dart';
@@ -17,6 +19,7 @@ class MessagerieRepository {
   static final MessagerieRepository instance = MessagerieRepository._();
 
   final DatabaseService _databaseService = DatabaseService.instance;
+  SupabaseClient get _supabase => Supabase.instance.client;
 
   String _idUtilisateur() {
     final id = ContexteUtilisateur.instance.idConnecte;
@@ -52,8 +55,10 @@ class MessagerieRepository {
   Future<List<Conversation>> conversationsDeLUtilisateur() async {
     final moi = _idUtilisateur();
     final db = await _databaseService.database;
+    await _syncRemote(db);
 
-    final lignes = await db.rawQuery('''
+    final lignes = await db.rawQuery(
+      '''
       SELECT c.*,
         (SELECT m.contenu FROM msg_message m
           WHERE m.conversation_id = c.id
@@ -94,7 +99,9 @@ class MessagerieRepository {
         ON moi.conversation_id = c.id
        AND moi.user_id = ?
       ORDER BY derniere_date DESC, c.created_at DESC
-    ''', [moi, moi, TypeMessage.systeme.name, moi]);
+    ''',
+      [moi, moi, TypeMessage.systeme.name, moi],
+    );
 
     final conversations = <Conversation>[];
     for (final ligne in lignes) {
@@ -102,7 +109,7 @@ class MessagerieRepository {
       final membres = await listerMembres(conversation.id);
       final dateDerniere =
           DateTime.tryParse(ligne['derniere_date']?.toString() ?? '') ??
-              conversation.dateDernierMessage;
+          conversation.dateDernierMessage;
 
       conversations.add(
         conversation.copyWith(
@@ -134,8 +141,10 @@ class MessagerieRepository {
   Future<List<Message>> messagesDe(String conversationId) async {
     final moi = _idUtilisateur();
     final db = await _databaseService.database;
+    await _syncRemote(db);
 
-    final lignes = await db.rawQuery('''
+    final lignes = await db.rawQuery(
+      '''
       SELECT m.* FROM msg_message m
       WHERE m.conversation_id = ?
         AND (m.supprime_pour_moi = 0 OR m.supprime_pour_tous = 1)
@@ -143,7 +152,9 @@ class MessagerieRepository {
           SELECT conversation_id FROM msg_membre WHERE user_id = ?
         )
       ORDER BY m.date_envoi ASC, m.id ASC
-    ''', [conversationId, moi]);
+    ''',
+      [conversationId, moi],
+    );
 
     return lignes.map(Message.fromMap).toList();
   }
@@ -152,9 +163,7 @@ class MessagerieRepository {
   Future<void> insererMessage(Message message) async {
     final conversationId = message.conversationId;
     if (conversationId == null || conversationId.isEmpty) {
-      throw ArgumentError(
-        'Le message doit être rattaché à une conversation.',
-      );
+      throw ArgumentError('Le message doit être rattaché à une conversation.');
     }
 
     final db = await _databaseService.database;
@@ -164,6 +173,13 @@ class MessagerieRepository {
       message.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    try {
+      await _supabase
+          .from('msg_message')
+          .upsert(_messageRemoteMap(message), onConflict: 'id');
+    } catch (error) {
+      debugPrint('[MessagerieRepository] Message non synchronisé : $error');
+    }
   }
 
   /// Met à jour l'état d'un message (statut, signalement, masquage,
@@ -190,6 +206,16 @@ class MessagerieRepository {
       ''',
       whereArgs: [message.id, moi],
     );
+    try {
+      await _supabase
+          .from('msg_message')
+          .update(_messageRemoteMap(message))
+          .eq('id', message.id);
+    } catch (error) {
+      debugPrint(
+        '[MessagerieRepository] Mise à jour message non synchronisée : $error',
+      );
+    }
   }
 
   /// Crée une conversation et ses membres dans une seule transaction.
@@ -213,16 +239,34 @@ class MessagerieRepository {
       );
 
       for (final membre in membres) {
-        await txn.insert(
-          'msg_membre',
-          {
-            'conversation_id': conversation.id,
-            ...membre.toMap(),
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
+        await txn.insert('msg_membre', {
+          'conversation_id': conversation.id,
+          ...membre.toMap(),
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
     });
+    try {
+      await _supabase
+          .from('msg_conversation')
+          .upsert(_conversationRemoteMap(conversation), onConflict: 'id');
+      await _supabase
+          .from('msg_membre')
+          .upsert(
+            membres
+                .map(
+                  (membre) => {
+                    'conversation_id': conversation.id,
+                    ...membre.toMap(),
+                  },
+                )
+                .toList(),
+            onConflict: 'conversation_id,user_id',
+          );
+    } catch (error) {
+      debugPrint(
+        '[MessagerieRepository] Conversation non synchronisée : $error',
+      );
+    }
   }
 
   /// Ajoute un membre à une conversation dont l'utilisateur connecté
@@ -230,14 +274,18 @@ class MessagerieRepository {
   Future<void> ajouterMembre(String conversationId, Membre membre) async {
     final db = await _databaseService.database;
     await _verifierMembre(db, conversationId);
-    await db.insert(
-      'msg_membre',
-      {
+    await db.insert('msg_membre', {
+      'conversation_id': conversationId,
+      ...membre.toMap(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    try {
+      await _supabase.from('msg_membre').upsert({
         'conversation_id': conversationId,
         ...membre.toMap(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+      }, onConflict: 'conversation_id,user_id');
+    } catch (error) {
+      debugPrint('[MessagerieRepository] Membre non synchronisé : $error');
+    }
   }
 
   /// Retire un membre d'une conversation dont l'utilisateur connecté
@@ -250,6 +298,17 @@ class MessagerieRepository {
       where: 'conversation_id = ? AND user_id = ?',
       whereArgs: [conversationId, membreId],
     );
+    try {
+      await _supabase
+          .from('msg_membre')
+          .delete()
+          .eq('conversation_id', conversationId)
+          .eq('user_id', membreId);
+    } catch (error) {
+      debugPrint(
+        '[MessagerieRepository] Suppression membre non synchronisée : $error',
+      );
+    }
   }
 
   /// Membres d'une conversation, conducteur en premier.
@@ -257,7 +316,8 @@ class MessagerieRepository {
     final moi = _idUtilisateur();
     final db = await _databaseService.database;
 
-    final lignes = await db.rawQuery('''
+    final lignes = await db.rawQuery(
+      '''
       SELECT * FROM msg_membre
       WHERE conversation_id = ?
         AND conversation_id IN (
@@ -265,7 +325,9 @@ class MessagerieRepository {
         )
       ORDER BY CASE role WHEN 'conducteur' THEN 0 ELSE 1 END,
                nom COLLATE NOCASE
-    ''', [conversationId, moi]);
+    ''',
+      [conversationId, moi],
+    );
 
     return lignes.map(Membre.fromMap).toList();
   }
@@ -281,6 +343,15 @@ class MessagerieRepository {
       where: 'conversation_id = ? AND user_id = ?',
       whereArgs: [conversationId, moi],
     );
+    try {
+      await _supabase
+          .from('msg_membre')
+          .update({'last_read_at': DateTime.now().toIso8601String()})
+          .eq('conversation_id', conversationId)
+          .eq('user_id', moi);
+    } catch (error) {
+      debugPrint('[MessagerieRepository] Lecture non synchronisée : $error');
+    }
   }
 
   /// Archive une conversation de l'utilisateur connecté.
@@ -298,6 +369,14 @@ class MessagerieRepository {
       ''',
       whereArgs: [conversationId, moi],
     );
+    try {
+      await _supabase
+          .from('msg_conversation')
+          .update({'archivee': true})
+          .eq('id', conversationId);
+    } catch (error) {
+      debugPrint('[MessagerieRepository] Archivage non synchronisé : $error');
+    }
   }
 
   /// Active ou coupe le son d'une conversation de l'utilisateur connecté.
@@ -315,18 +394,24 @@ class MessagerieRepository {
       ''',
       whereArgs: [conversationId, moi],
     );
+    try {
+      await _supabase
+          .from('msg_conversation')
+          .update({'muet': muet})
+          .eq('id', conversationId);
+    } catch (error) {
+      debugPrint('[MessagerieRepository] Préférence non synchronisée : $error');
+    }
   }
 
   /// Vrai s'il existe déjà une conversation privée entre ces deux
   /// utilisateurs (l'utilisateur connecté doit en faire partie).
-  Future<bool> conversationPriveExiste(
-    String userIdA,
-    String userIdB,
-  ) async {
+  Future<bool> conversationPriveExiste(String userIdA, String userIdB) async {
     final moi = _idUtilisateur();
     final db = await _databaseService.database;
 
-    final lignes = await db.rawQuery('''
+    final lignes = await db.rawQuery(
+      '''
       SELECT c.id FROM msg_conversation c
       WHERE c.type = ?
         AND EXISTS (
@@ -343,13 +428,79 @@ class MessagerieRepository {
           SELECT conversation_id FROM msg_membre WHERE user_id = ?
         )
       LIMIT 1
-    ''', [
-      TypeConversation.prive.name,
-      userIdA,
-      userIdB,
-      moi,
-    ]);
+    ''',
+      [TypeConversation.prive.name, userIdA, userIdB, moi],
+    );
 
     return lignes.isNotEmpty;
   }
+
+  Future<void> _syncRemote(Database db) async {
+    try {
+      final conversations = await _supabase.from('msg_conversation').select();
+      final membres = await _supabase.from('msg_membre').select();
+      final messages = await _supabase.from('msg_message').select();
+      for (final row in conversations) {
+        await db.insert(
+          'msg_conversation',
+          _localConversationMap(Map<String, dynamic>.from(row)),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      for (final row in membres) {
+        await db.insert(
+          'msg_membre',
+          _localMemberMap(Map<String, dynamic>.from(row)),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      for (final row in messages) {
+        await db.insert(
+          'msg_message',
+          _localMessageMap(Map<String, dynamic>.from(row)),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    } catch (error) {
+      debugPrint(
+        '[MessagerieRepository] Synchronisation distante impossible : $error',
+      );
+    }
+  }
+
+  Map<String, dynamic> _conversationRemoteMap(Conversation value) => {
+    ...value.toMap(),
+    'archivee': value.archive,
+    'muet': value.muet,
+  };
+
+  Map<String, dynamic> _messageRemoteMap(Message value) => {
+    ...value.toMap(),
+    'ecoute': value.ecoute,
+    'signale': value.estSignale,
+    'masque': value.masque,
+    'supprime_pour_tous': value.supprimePourTous,
+    'supprime_pour_moi': value.supprimePourMoi,
+  };
+
+  Map<String, dynamic> _localConversationMap(Map<String, dynamic> value) => {
+    ...value,
+    'archivee': value['archivee'] == true ? 1 : value['archivee'],
+    'muet': value['muet'] == true ? 1 : value['muet'],
+  };
+
+  Map<String, dynamic> _localMemberMap(Map<String, dynamic> value) => value;
+
+  Map<String, dynamic> _localMessageMap(Map<String, dynamic> value) => {
+    ...value,
+    'ecoute': value['ecoute'] == true ? 1 : value['ecoute'],
+    'signale': value['signale'] == true ? 1 : value['signale'],
+    'masque': value['masque'] == true ? 1 : value['masque'],
+    'supprime_pour_tous': value['supprime_pour_tous'] == true
+        ? 1
+        : value['supprime_pour_tous'],
+    'supprime_pour_moi': value['supprime_pour_moi'] == true
+        ? 1
+        : value['supprime_pour_moi'],
+  };
 }

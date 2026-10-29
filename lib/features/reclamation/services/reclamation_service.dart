@@ -1,10 +1,11 @@
-import 'package:flutter/foundation.dart';
+﻿import 'package:flutter/foundation.dart';
 
 import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
 
 import '../../../core/services/database_service.dart';
+import '../../../core/services/supabase_service.dart';
 
 import '../models/reclamation.dart';
 
@@ -50,7 +51,34 @@ class ReclamationService extends ChangeNotifier {
         _reclamations[index] = reclamation;
       }
     }
+    await _loadRemote();
     notifyListeners();
+  }
+
+  Future<void> _loadRemote() async {
+    try {
+      final rows = await SupabaseService.instance.client
+          .from('reclamations')
+          .select()
+          .order('date', ascending: false);
+      for (final row in rows) {
+        final reclamation = _fromMap(Map<String, Object?>.from(row));
+        final index = _reclamations.indexWhere(
+          (item) => item.id == reclamation.id,
+        );
+        if (index == -1) {
+          _reclamations.add(reclamation);
+        } else {
+          _reclamations[index] = reclamation;
+        }
+        await _saveLocal(reclamation);
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[ReclamationService] Synchronisation Supabase impossible : $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   List<Reclamation> get reclamations => List.unmodifiable(_reclamations);
@@ -105,9 +133,9 @@ class ReclamationService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void ajouterReponse(int id, String message) {
+  void ajouterReponse(int id, String message, {String? audioPath}) {
     final normalizedMessage = message.trim();
-    if (normalizedMessage.isEmpty) return;
+    if (normalizedMessage.isEmpty && audioPath == null) return;
 
     final index = _reclamations.indexWhere(
       (reclamation) => reclamation.id == id,
@@ -129,7 +157,11 @@ class ReclamationService extends ChangeNotifier {
       aiConseil: reclamation.aiConseil,
       responses: [
         ...reclamation.responses,
-        ReclamationResponse(message: normalizedMessage, date: DateTime.now()),
+        ReclamationResponse(
+          message: normalizedMessage,
+          date: DateTime.now(),
+          audioPath: audioPath,
+        ),
       ],
     );
     _save(_reclamations[index]);
@@ -137,6 +169,20 @@ class ReclamationService extends ChangeNotifier {
   }
 
   Future<void> _save(Reclamation reclamation) async {
+    await _saveLocal(reclamation);
+    try {
+      await SupabaseService.instance.client
+          .from('reclamations')
+          .upsert(_toRemoteMap(reclamation), onConflict: 'id');
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[ReclamationService] Enregistrement Supabase impossible : $error',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _saveLocal(Reclamation reclamation) async {
     final db = await DatabaseService.instance.database;
     await db.insert(
       'reclamations',
@@ -163,25 +209,45 @@ class ReclamationService extends ChangeNotifier {
             (response) => {
               'message': response.message,
               'date': response.date.toIso8601String(),
+              'audioPath': response.audioPath,
             },
           )
           .toList(),
     ),
   };
 
+  Map<String, dynamic> _toRemoteMap(Reclamation reclamation) {
+    final map = _toMap(reclamation);
+    map['responses'] = reclamation.responses
+        .map(
+          (response) => {
+            'message': response.message,
+            'date': response.date.toIso8601String(),
+            'audioPath': response.audioPath,
+          },
+        )
+        .toList();
+    return map;
+  }
+
   Reclamation _fromMap(Map<String, Object?> map) {
+    final rawResponses = map['responses'];
+    final decodedResponses = rawResponses is String
+        ? jsonDecode(rawResponses)
+        : rawResponses;
     final responseList =
-        (jsonDecode(map['responses'] as String? ?? '[]') as List)
+        (decodedResponses is List ? decodedResponses : const [])
             .whereType<Map>()
             .map(
               (item) => ReclamationResponse(
                 message: item['message'] as String? ?? '',
                 date: DateTime.parse(item['date'] as String),
+                audioPath: item['audioPath'] as String?,
               ),
             )
             .toList();
     return Reclamation(
-      id: map['id'] as int,
+      id: (map['id'] as num).toInt(),
       type: ReclamationType.values.byName(map['type'] as String),
       sujet: map['sujet'] as String,
       description: map['description'] as String,

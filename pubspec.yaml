@@ -1,5 +1,5 @@
 name: covoiturage_etudiant
-description: "A new Flutter project."
+description: "UniDrive - Application de covoiturage pour étudiants tunisiens"
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -16,7 +16,6 @@ dependencies:
   flutter_nominatim: ^0.0.1+2
   cupertino_icons: ^1.0.8
   sqflite: ^2.4.4
-  sqflite_common_ffi: ^2.4.5
   path: ^1.9.1
   intl: ^0.20.3
   flutter_localizations:
@@ -30,6 +29,8 @@ dependencies:
   permission_handler: ^13.0.2
   flutter_map: ^7.0.2
   geolocator: ^13.0.2
+  supabase_flutter: ^2.9.1
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   flutter_test:
@@ -38,15 +39,24 @@ dev_dependencies:
   flutter_native_splash: ^2.4.6
   flutter_lints: ^6.0.0
 
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  image_path: "assets/images/icon_cov.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#2A7C13"
+  adaptive_icon_foreground: "assets/images/icon_cov.png"
+
+flutter_native_splash:
+  color: "#1D5A0F"
+  android: true
+  ios: true
+  web: false
+  android_12:
+    color: "#1D5A0F"
+    icon_background_color: "#1D5A0F"
+
 flutter:
   uses-material-design: true
   assets:
     - assets/images/icon_cov.png
-
-flutter_native_splash:
-  color: "#101828"
-  android: true
-  ios: true
-  web: true
-  android_12:
-    color: "#101828"

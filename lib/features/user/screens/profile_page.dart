@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../app/theme.dart';
+import '../../../core/services/supabase_storage_service.dart';
 import '../models/user_model.dart';
 import '../models/tunisia_data.dart';
 import '../services/user_service.dart';
@@ -818,7 +819,8 @@ class _ProfilePageState extends State<ProfilePage> {
         imageQuality: 85,
       );
       if (image != null) {
-        await _userService.updateAvatar(image.path);
+        final supabaseUrl = await SupabaseStorageService.instance.uploadImage(image.path);
+        await _userService.updateAvatar(supabaseUrl ?? image.path);
         if (!mounted) return;
         messenger.showSnackBar(
           const SnackBar(
@@ -1283,7 +1285,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   const SizedBox(height: 24),
 
                   const Text(
-                    '📜 CONDITIONS & CHARTE DU COVOITURAGE ÉTUDIANT',
+                    '📜 CONDITIONS & CHARTE UNIDRIVE',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.bold,

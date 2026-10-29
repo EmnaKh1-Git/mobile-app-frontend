@@ -14,8 +14,10 @@
 //  Les bases existantes (v1) sont migrées dans _upgradeDB sans perte.
 // ============================================================
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/lieu.dart';
 import '../../models/trajet.dart';
@@ -61,7 +63,8 @@ class TrajetDatabase {
       await db.execute('ALTER TABLE $tableTrajets ADD COLUMN lat_arrivee REAL');
       await db.execute('ALTER TABLE $tableTrajets ADD COLUMN lng_arrivee REAL');
       await db.execute(
-          "ALTER TABLE $tableTrajets ADD COLUMN itineraire TEXT NOT NULL DEFAULT ''");
+        "ALTER TABLE $tableTrajets ADD COLUMN itineraire TEXT NOT NULL DEFAULT ''",
+      );
       await _creerTableLieux(db);
     }
   }
@@ -133,9 +136,11 @@ CREATE TABLE $tableEtapes (
 
     // Index pour accélérer la recherche (départ, arrivée, date)
     await db.execute(
-        'CREATE INDEX idx_trajets_recherche ON $tableTrajets (ville_depart, ville_arrivee, date_depart)');
+      'CREATE INDEX idx_trajets_recherche ON $tableTrajets (ville_depart, ville_arrivee, date_depart)',
+    );
     await db.execute(
-        'CREATE INDEX idx_etapes_trajet ON $tableEtapes (trajet_id)');
+      'CREATE INDEX idx_etapes_trajet ON $tableEtapes (trajet_id)',
+    );
 
     await _creerTableLieux(db);
   }
@@ -145,10 +150,30 @@ CREATE TABLE $tableEtapes (
   /// Insère un trajet (et ses étapes) et le renvoie avec l'id attribué par SQLite
   Future<Trajet> create(Trajet trajet) async {
     final db = await instance.database;
-    late int id;
+    var id = trajet.id;
+    try {
+      final remote = await Supabase.instance.client
+          .from(tableTrajets)
+          .insert(_remoteMap(trajet)..remove('id'))
+          .select('id')
+          .single();
+      id = (remote['id'] as num).toInt();
+      for (final etape in trajet.etapes) {
+        await Supabase.instance.client.from('trajet_etapes').insert({
+          'trajet_id': id,
+          'ville': etape.ville,
+          'ordre': etape.ordre,
+          'prix': etape.prix,
+        });
+      }
+    } catch (error) {
+      debugPrint('[TrajetDatabase] Création Supabase impossible : $error');
+    }
     await db.transaction((txn) async {
       // toMap() n'inclut pas l'id quand il vaut 0 : SQLite le génère
-      id = await txn.insert(tableTrajets, trajet.toMap());
+      final localMap = trajet.toMap();
+      if (id > 0) localMap['id'] = id;
+      id = await txn.insert(tableTrajets, localMap);
       for (final e in trajet.etapes) {
         await txn.insert(tableEtapes, e.toMap(id));
       }
@@ -161,6 +186,29 @@ CREATE TABLE $tableEtapes (
     final db = await instance.database;
     final lignes = await db.query(tableTrajets, orderBy: 'date_depart ASC');
     final lignesEtapes = await db.query(tableEtapes, orderBy: 'ordre ASC');
+    try {
+      final remote = await Supabase.instance.client
+          .from(tableTrajets)
+          .select('*, trajet_etapes(*)')
+          .order('date_depart');
+      for (final row in remote) {
+        final map = _localMap(Map<String, dynamic>.from(row));
+        await db.insert(
+          tableTrajets,
+          map..remove('id'),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      return remote.map((row) {
+        final map = _localMap(Map<String, dynamic>.from(row));
+        final steps = ((row['trajet_etapes'] as List?) ?? [])
+            .map((item) => Etape.fromMap(_localMap(item)))
+            .toList();
+        return Trajet.fromMap(map, etapes: steps);
+      }).toList();
+    } catch (error) {
+      debugPrint('[TrajetDatabase] Lecture Supabase impossible : $error');
+    }
 
     // Regroupe les étapes par trajet_id
     final etapesParTrajet = <int, List<Etape>>{};
@@ -177,36 +225,111 @@ CREATE TABLE $tableEtapes (
 
   Future<Trajet?> readById(int id) async {
     final db = await instance.database;
-    final res = await db.query(tableTrajets,
-        where: 'id = ?', whereArgs: [id], limit: 1);
+    final res = await db.query(
+      tableTrajets,
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
     if (res.isEmpty) return null;
-    final etapes = await db.query(tableEtapes,
-        where: 'trajet_id = ?', whereArgs: [id], orderBy: 'ordre ASC');
-    return Trajet.fromMap(res.first,
-        etapes: etapes.map((m) => Etape.fromMap(m)).toList());
+    final etapes = await db.query(
+      tableEtapes,
+      where: 'trajet_id = ?',
+      whereArgs: [id],
+      orderBy: 'ordre ASC',
+    );
+    return Trajet.fromMap(
+      res.first,
+      etapes: etapes.map((m) => Etape.fromMap(m)).toList(),
+    );
   }
 
   /// Met à jour un trajet (places, statut, date…). Les étapes ne changent pas.
   Future<int> update(Trajet trajet) async {
     final db = await instance.database;
-    return db.update(
+    final updated = await db.update(
       tableTrajets,
       trajet.toMap(),
       where: 'id = ?',
       whereArgs: [trajet.id],
     );
+    try {
+      await Supabase.instance.client
+          .from(tableTrajets)
+          .update(_remoteMap(trajet)..remove('id'))
+          .eq('id', trajet.id);
+    } catch (error) {
+      debugPrint('[TrajetDatabase] Mise à jour Supabase impossible : $error');
+    }
+    return updated;
   }
 
   /// Supprime un trajet ; ses étapes sont supprimées par ON DELETE CASCADE
   Future<int> delete(int id) async {
     final db = await instance.database;
-    return db.delete(tableTrajets, where: 'id = ?', whereArgs: [id]);
+    final deleted = await db.delete(
+      tableTrajets,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    try {
+      await Supabase.instance.client.from(tableTrajets).delete().eq('id', id);
+    } catch (error) {
+      debugPrint('[TrajetDatabase] Suppression Supabase impossible : $error');
+    }
+    return deleted;
   }
+
+  Map<String, dynamic> _remoteMap(Trajet trajet) => {
+    if (trajet.id > 0) 'id': trajet.id,
+    'conducteur_id': trajet.conducteurId,
+    'conducteur_nom': trajet.conducteurNom,
+    'conducteur_note': trajet.conducteurNote,
+    'ville_depart': trajet.villeDepart,
+    'adresse_depart': trajet.adresseDepart,
+    'ville_arrivee': trajet.villeArrivee,
+    'adresse_arrivee': trajet.adresseArrivee,
+    'date_depart': trajet.dateDepart.toIso8601String(),
+    'duree_minutes': trajet.dureeMinutes,
+    'distance_km': trajet.distanceKm,
+    'vehicule': trajet.vehicule,
+    'capacite_vehicule': trajet.capaciteVehicule,
+    'places_totales': trajet.placesTotales,
+    'places_disponibles': trajet.placesDispo,
+    'prix_place': trajet.prixPlace,
+    'bagages': trajet.bagages,
+    'fumeur': trajet.fumeur,
+    'animaux': trajet.animaux,
+    'reservation_auto': trajet.reservationAuto,
+    'description': trajet.description,
+    'statut': trajet.statut.name,
+    'date_creation': trajet.dateCreation.toIso8601String(),
+    'lat_depart': trajet.latDepart,
+    'lng_depart': trajet.lngDepart,
+    'lat_arrivee': trajet.latArrivee,
+    'lng_arrivee': trajet.lngArrivee,
+    'itineraire': trajet.itineraire,
+  };
+
+  Map<String, dynamic> _localMap(Map<String, dynamic> map) => {
+    ...map,
+    'conducteur_id':
+        (map['conducteur_id'] as num?)?.toInt() ??
+        int.tryParse(map['conducteur_id'].toString()) ??
+        0,
+    'bagages': map['bagages'] == true ? 1 : map['bagages'],
+    'fumeur': map['fumeur'] == true ? 1 : map['fumeur'],
+    'animaux': map['animaux'] == true ? 1 : map['animaux'],
+    'reservation_auto': map['reservation_auto'] == true
+        ? 1
+        : map['reservation_auto'],
+  };
 
   Future<int> count() async {
     final db = await instance.database;
     return Sqflite.firstIntValue(
-            await db.rawQuery('SELECT COUNT(*) FROM $tableTrajets')) ??
+          await db.rawQuery('SELECT COUNT(*) FROM $tableTrajets'),
+        ) ??
         0;
   }
 
@@ -228,16 +351,46 @@ CREATE TABLE $tableEtapes (
   /// Derniers lieux utilisés (onglet « Suggéré »)
   Future<List<Lieu>> lieuxRecents({int limite = 10}) async {
     final db = await instance.database;
-    final res = await db.query(tableLieux,
-        orderBy: 'date_utilisation DESC', limit: limite);
+    try {
+      final remote = await Supabase.instance.client
+          .from(tableLieux)
+          .select()
+          .order('date_utilisation', ascending: false)
+          .limit(limite);
+      return remote
+          .map((row) => Lieu.fromMap(_localLieuMap(Map<String, dynamic>.from(row))))
+          .toList();
+    } catch (error) {
+      debugPrint('[TrajetDatabase] Lecture des lieux Supabase impossible : $error');
+    }
+    final res = await db.query(
+      tableLieux,
+      orderBy: 'date_utilisation DESC',
+      limit: limite,
+    );
     return res.map((m) => Lieu.fromMap(m)).toList();
   }
 
   /// Lieux marqués d'un signet (onglet « Enregistré »)
   Future<List<Lieu>> lieuxEnregistres() async {
     final db = await instance.database;
-    final res = await db.query(tableLieux,
-        where: 'enregistre = 1', orderBy: 'nom COLLATE NOCASE');
+    try {
+      final remote = await Supabase.instance.client
+          .from(tableLieux)
+          .select()
+          .eq('enregistre', true)
+          .order('nom');
+      return remote
+          .map((row) => Lieu.fromMap(_localLieuMap(Map<String, dynamic>.from(row))))
+          .toList();
+    } catch (error) {
+      debugPrint('[TrajetDatabase] Lecture des favoris Supabase impossible : $error');
+    }
+    final res = await db.query(
+      tableLieux,
+      where: 'enregistre = 1',
+      orderBy: 'nom COLLATE NOCASE',
+    );
     return res.map((m) => Lieu.fromMap(m)).toList();
   }
 
@@ -247,15 +400,38 @@ CREATE TABLE $tableEtapes (
     final maintenant = DateTime.now().toIso8601String();
     final existant = await _trouverLieu(db, lieu);
     if (existant != null) {
-      await db.update(tableLieux, {'date_utilisation': maintenant},
-          where: 'id = ?', whereArgs: [existant.id]);
+      await db.update(
+        tableLieux,
+        {'date_utilisation': maintenant},
+        where: 'id = ?',
+        whereArgs: [existant.id],
+      );
+      try {
+        await Supabase.instance.client
+            .from(tableLieux)
+            .update({'date_utilisation': maintenant})
+            .eq('id', existant.id!);
+      } catch (error) {
+        debugPrint('[TrajetDatabase] Mise à jour du lieu impossible : $error');
+      }
       return existant;
     }
     final id = await db.insert(tableLieux, lieu.toMap()..remove('id'));
+    try {
+      final remote = await Supabase.instance.client
+          .from(tableLieux)
+          .insert(_remoteLieuMap(lieu))
+          .select('id')
+          .single();
+      return lieu.copyWith(id: (remote['id'] as num).toInt());
+    } catch (error) {
+      debugPrint('[TrajetDatabase] Enregistrement du lieu impossible : $error');
+    }
     // On ne garde que les lieux récents les plus utilisés (+ tous les favoris)
     await db.rawDelete(
-        'DELETE FROM $tableLieux WHERE enregistre = 0 AND id NOT IN '
-        '(SELECT id FROM $tableLieux ORDER BY date_utilisation DESC LIMIT $maxLieuxRecents)');
+      'DELETE FROM $tableLieux WHERE enregistre = 0 AND id NOT IN '
+      '(SELECT id FROM $tableLieux ORDER BY date_utilisation DESC LIMIT $maxLieuxRecents)',
+    );
     return lieu.copyWith(id: id);
   }
 
@@ -264,19 +440,53 @@ CREATE TABLE $tableEtapes (
     final db = await instance.database;
     final existant = await _trouverLieu(db, lieu) ?? await memoriserLieu(lieu);
     final nouveau = !existant.enregistre;
-    await db.update(tableLieux, {'enregistre': nouveau ? 1 : 0},
-        where: 'id = ?', whereArgs: [existant.id]);
+    await db.update(
+      tableLieux,
+      {'enregistre': nouveau ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [existant.id],
+    );
+    try {
+      await Supabase.instance.client
+          .from(tableLieux)
+          .update({'enregistre': nouveau})
+          .eq('id', existant.id!);
+    } catch (error) {
+      debugPrint('[TrajetDatabase] Mise à jour du favori impossible : $error');
+    }
     return existant.copyWith(enregistre: nouveau);
   }
 
+  Map<String, dynamic> _remoteLieuMap(Lieu lieu) => {
+        'nom': lieu.nom,
+        'adresse': lieu.adresse,
+        'ville': lieu.ville,
+        'lat': lieu.lat,
+        'lng': lieu.lng,
+        'enregistre': lieu.enregistre,
+        'date_utilisation': DateTime.now().toIso8601String(),
+      };
+
+  Map<String, dynamic> _localLieuMap(Map<String, dynamic> map) => {
+        ...map,
+        'enregistre': map['enregistre'] == true ? 1 : map['enregistre'],
+      };
+
   Future<Lieu?> _trouverLieu(Database db, Lieu lieu) async {
     final res = lieu.id != null
-        ? await db.query(tableLieux,
-            where: 'id = ?', whereArgs: [lieu.id], limit: 1)
-        : await db.query(tableLieux,
-            where: 'nom = ? AND ABS(lat - ?) < 0.0005 AND ABS(lng - ?) < 0.0005',
+        ? await db.query(
+            tableLieux,
+            where: 'id = ?',
+            whereArgs: [lieu.id],
+            limit: 1,
+          )
+        : await db.query(
+            tableLieux,
+            where:
+                'nom = ? AND ABS(lat - ?) < 0.0005 AND ABS(lng - ?) < 0.0005',
             whereArgs: [lieu.nom, lieu.lat, lieu.lng],
-            limit: 1);
+            limit: 1,
+          );
     return res.isEmpty ? null : Lieu.fromMap(res.first);
   }
 }

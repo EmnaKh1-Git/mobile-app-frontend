@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'email_config.dart';
@@ -67,14 +67,14 @@ class EmailService {
           'to_email': recipientEmail,
           'to_name': recipientName,
           'name': recipientName,
-          'from_name': 'Covoiturage Étudiant',
+          'from_name': 'UniDrive',
           'verification_code': code,
           'code': code,
           'email': recipientEmail,
           'user_email': recipientEmail,
           'message': 'Voici votre code de sécurité pour réinitialiser votre mot de passe : $code',
-          'app_name': 'Covoiturage Étudiant',
-          'support_email': 'support@covoiturage-etudiant.tn',
+          'app_name': 'UniDrive',
+          'support_email': 'support@unidrive.tn',
         },
       };
 

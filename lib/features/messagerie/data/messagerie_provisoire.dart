@@ -34,7 +34,6 @@ class Reservation {
   }
 }
 
-/// TODO: remplacer par les vraies réservations du module trajets.
 /// Le nom du passager est toujours lu dans `app_users` : les entrées
 /// dont l'identifiant n'existe pas sont ignorées.
 final List<Reservation> reservationsProvisoires = [

@@ -4,6 +4,7 @@ import '../models/user_model.dart';
 import 'database_service.dart';
 import 'email_service.dart';
 import '../../../core/services/cloudinary_service.dart';
+import '../../../core/services/supabase_service.dart';
 
 class UserService extends ChangeNotifier {
   static final UserService _instance = UserService._internal();
@@ -32,10 +33,30 @@ class UserService extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
 
-    await Future.delayed(const Duration(milliseconds: 300));
-
     final normalizedEmail = email.trim().toLowerCase();
-    final user = await _db.getUserByEmail(normalizedEmail);
+    UserModel? user;
+    try {
+      final response = await SupabaseService.instance.client.auth
+          .signInWithPassword(email: normalizedEmail, password: password);
+      final remoteUser = response.user;
+      if (remoteUser != null) {
+        final profile = await SupabaseService.instance.client
+            .from('profiles')
+            .select()
+            .eq('id', remoteUser.id)
+            .maybeSingle();
+        if (profile != null) {
+          user = UserModel.fromMap({
+            ...Map<String, dynamic>.from(profile),
+            'id': profile['local_id'] ?? remoteUser.id,
+          });
+          await _db.insertUser(user, password);
+        }
+      }
+    } catch (error) {
+      debugPrint('[UserService] Connexion Supabase indisponible : $error');
+    }
+    user ??= await _db.getUserByEmail(normalizedEmail);
 
     if (user != null && user.isBanni) {
       _errorMessage =
@@ -45,7 +66,10 @@ class UserService extends ChangeNotifier {
       return false;
     }
 
-    final isValid = await _db.verifyCredentials(normalizedEmail, password);
+    final isValid =
+        user != null &&
+        (SupabaseService.instance.currentUser?.email == normalizedEmail ||
+            await _db.verifyCredentials(normalizedEmail, password));
 
     if (!isValid) {
       _errorMessage = user == null
@@ -184,6 +208,20 @@ class UserService extends ChangeNotifier {
     );
 
     await _db.insertUser(newUser, password);
+    try {
+      final response = await SupabaseService.instance.client.auth.signUp(
+        email: normalizedEmail,
+        password: password,
+      );
+      final remoteUser = response.user;
+      if (remoteUser != null) {
+        await SupabaseService.instance.client
+            .from('profiles')
+            .upsert(_remoteProfile(newUser, remoteUser.id), onConflict: 'id');
+      }
+    } catch (error) {
+      debugPrint('[UserService] Inscription Supabase impossible : $error');
+    }
     _currentUser = newUser;
 
     _isLoading = false;
@@ -337,6 +375,7 @@ class UserService extends ChangeNotifier {
     if (_currentUser == null || _currentUser!.isAdmin) return;
     _currentUser = _currentUser!.copyWith(role: newRole);
     await _db.updateUser(_currentUser!);
+    await _syncCurrentProfile();
     notifyListeners();
   }
 
@@ -352,6 +391,7 @@ class UserService extends ChangeNotifier {
     }
     _currentUser = _currentUser!.copyWith(avatarUrl: storedAvatarUrl);
     await _db.updateUser(_currentUser!);
+    await _syncCurrentProfile();
     notifyListeners();
   }
 
@@ -387,6 +427,7 @@ class UserService extends ChangeNotifier {
     );
 
     await _db.updateUser(_currentUser!);
+    await _syncCurrentProfile();
     notifyListeners();
   }
 
@@ -407,9 +448,52 @@ class UserService extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    try {
+      await SupabaseService.instance.signOut();
+    } catch (error) {
+      debugPrint('[UserService] Déconnexion Supabase impossible : $error');
+    }
     _currentUser = null;
     _errorMessage = null;
     notifyListeners();
+  }
+
+  Map<String, dynamic> _remoteProfile(UserModel user, String authId) => {
+    'id': authId,
+    'local_id': user.id,
+    'nom': user.nom,
+    'prenom': user.prenom,
+    'email': user.email,
+    'telephone': user.telephone,
+    'indicatifTel': user.indicatifTel,
+    'role': user.role.name,
+    'avatarUrl': user.avatarUrl,
+    'gouvernorat': user.gouvernorat,
+    'universite': user.universite,
+    'note': user.note,
+    'nombreTrajets': user.nombreTrajets,
+    'marqueVehicule': user.marqueVehicule,
+    'modeleVehicule': user.modeleVehicule,
+    'couleurVehicule': user.couleurVehicule,
+    'immatriculation': user.immatriculation,
+    'placesDisponibles': user.placesDisponibles,
+    'dateInscription': user.dateInscription?.toIso8601String(),
+    'isBanni': user.isBanni,
+    'isBloque': user.isBloque,
+    'raisonBlocage': user.raisonBlocage,
+  };
+
+  Future<void> _syncCurrentProfile() async {
+    final user = _currentUser;
+    final authUser = SupabaseService.instance.currentUser;
+    if (user == null || authUser == null) return;
+    try {
+      await SupabaseService.instance.client
+          .from('profiles')
+          .upsert(_remoteProfile(user, authUser.id), onConflict: 'id');
+    } catch (error) {
+      debugPrint('[UserService] Profil Supabase non synchronisé : $error');
+    }
   }
 
   Future<List<UserModel>> getAllUsersForAdmin() async {

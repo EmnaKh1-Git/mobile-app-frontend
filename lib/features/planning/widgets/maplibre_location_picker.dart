@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:maplibre_gl/maplibre_gl.dart';
@@ -72,6 +72,7 @@ class _MapLibreLocationPickerState extends State<MapLibreLocationPicker> {
             _addMarker(newPoint);
           }
         } else {
+          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Aucun résultat trouvé en Tunisie pour cette recherche.")),
           );
@@ -79,6 +80,7 @@ class _MapLibreLocationPickerState extends State<MapLibreLocationPicker> {
       }
     } catch (e) {
       debugPrint('Erreur: $e');
+          if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Erreur de connexion.")),
       );
@@ -168,7 +170,7 @@ class _MapLibreLocationPickerState extends State<MapLibreLocationPicker> {
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.9),
+                color: Colors.white.withValues(alpha: 0.9),
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4)],
               ),

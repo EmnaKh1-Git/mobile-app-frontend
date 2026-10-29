@@ -1,4 +1,4 @@
-package com.example.covoiturage_etudiant
+package tn.esprit.covoiturage
 
 import android.media.MediaPlayer
 import io.flutter.embedding.engine.FlutterEngine
@@ -74,3 +74,4 @@ class MainActivity : FlutterActivity() {
         super.onDestroy()
     }
 }
+

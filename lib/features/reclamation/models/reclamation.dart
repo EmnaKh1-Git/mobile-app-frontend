@@ -1,4 +1,4 @@
-enum ReclamationType {
+﻿enum ReclamationType {
   retard,
   conducteur,
   vehicule,
@@ -15,10 +15,12 @@ enum ReclamationStatus {
 class ReclamationResponse {
   final String message;
   final DateTime date;
+  final String? audioPath; // URL ou chemin vocal admin
 
   const ReclamationResponse({
     required this.message,
     required this.date,
+    this.audioPath,
   });
 }
 

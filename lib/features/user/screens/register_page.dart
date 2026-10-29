@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../app/theme.dart';
+import '../../../core/services/supabase_storage_service.dart';
 import '../models/user_model.dart';
 import '../models/tunisia_data.dart';
 import '../services/user_service.dart';
@@ -10,6 +11,7 @@ import 'widgets/captcha_widget.dart';
 import 'widgets/user_avatar_view.dart';
 import 'widgets/google_sign_in_modal.dart';
 import 'widgets/auth_map_background.dart';
+import 'privacy_policy_page.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -352,6 +354,15 @@ class _RegisterPageState extends State<RegisterPage> {
       _errorMessage = null;
     });
 
+    if (_selectedAvatarId.contains('/') || _selectedAvatarId.contains('\\')) {
+      final uploadedUrl = await SupabaseStorageService.instance.uploadImage(
+        _selectedAvatarId,
+      );
+      if (uploadedUrl != null) {
+        _selectedAvatarId = uploadedUrl;
+      }
+    }
+
     final success = await _userService.register(
       nom: _nomController.text,
       prenom: _prenomController.text,
@@ -381,9 +392,7 @@ class _RegisterPageState extends State<RegisterPage> {
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Compte créé avec succès ! Bienvenue sur Covoiturage Étudiant.',
-          ),
+          content: Text('Compte créé avec succès ! Bienvenue sur UniDrive.'),
           backgroundColor: AppColors.primaire,
         ),
       );
@@ -521,10 +530,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 const SizedBox(height: 4),
                 const Text(
                   'Create your new account',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    color: AppColors.texte2,
-                  ),
+                  style: TextStyle(fontSize: 13.5, color: AppColors.texte2),
                 ),
 
                 const SizedBox(height: 20),
@@ -647,9 +653,8 @@ class _RegisterPageState extends State<RegisterPage> {
                           title: 'Passager',
                           icon: Icons.person_rounded,
                           isSelected: _selectedRole == UserRole.passager,
-                          onTap: () => setState(
-                            () => _selectedRole = UserRole.passager,
-                          ),
+                          onTap: () =>
+                              setState(() => _selectedRole = UserRole.passager),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -705,7 +710,8 @@ class _RegisterPageState extends State<RegisterPage> {
                     decoration: _buildPillDecoration(
                       'user@mail.com',
                       Icons.mail_outline_rounded,
-                      suffix: _emailController.text.contains('@') &&
+                      suffix:
+                          _emailController.text.contains('@') &&
                               _emailController.text.contains('.')
                           ? const Icon(
                               Icons.check_circle_rounded,
@@ -822,11 +828,15 @@ class _RegisterPageState extends State<RegisterPage> {
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
                         isExpanded: true,
-                        value: kTunisianGovernoratesAndUniversities
-                                .containsKey(_selectedGouvernorat)
+                        value:
+                            kTunisianGovernoratesAndUniversities.containsKey(
+                              _selectedGouvernorat,
+                            )
                             ? _selectedGouvernorat
                             : 'Tunis',
-                        items: kTunisianGovernoratesAndUniversities.keys.map((gov) {
+                        items: kTunisianGovernoratesAndUniversities.keys.map((
+                          gov,
+                        ) {
                           return DropdownMenuItem<String>(
                             value: gov,
                             child: Row(
@@ -874,11 +884,12 @@ class _RegisterPageState extends State<RegisterPage> {
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
                         isExpanded: true,
-                        value: universitesDisponibles.contains(_selectedUniversite)
+                        value:
+                            universitesDisponibles.contains(_selectedUniversite)
                             ? _selectedUniversite
                             : (universitesDisponibles.isNotEmpty
-                                ? universitesDisponibles.first
-                                : null),
+                                  ? universitesDisponibles.first
+                                  : null),
                         items: universitesDisponibles.map((univ) {
                           return DropdownMenuItem<String>(
                             value: univ,
@@ -941,24 +952,47 @@ class _RegisterPageState extends State<RegisterPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text('Marque', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                                    const Text(
+                                      'Marque',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                     const SizedBox(height: 4),
                                     Container(
                                       height: 48,
-                                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                      ),
                                       decoration: BoxDecoration(
                                         color: Colors.white,
                                         borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(color: AppColors.bordure),
+                                        border: Border.all(
+                                          color: AppColors.bordure,
+                                        ),
                                       ),
                                       child: DropdownButtonHideUnderline(
                                         child: DropdownButton<String>(
                                           isExpanded: true,
-                                          value: kCarBrandsAndModels.containsKey(_selectedMarque)
+                                          value:
+                                              kCarBrandsAndModels.containsKey(
+                                                _selectedMarque,
+                                              )
                                               ? _selectedMarque
                                               : 'Peugeot',
-                                          items: kCarBrandsAndModels.keys.map((b) {
-                                            return DropdownMenuItem(value: b, child: Text(b, style: const TextStyle(fontSize: 12.5)));
+                                          items: kCarBrandsAndModels.keys.map((
+                                            b,
+                                          ) {
+                                            return DropdownMenuItem(
+                                              value: b,
+                                              child: Text(
+                                                b,
+                                                style: const TextStyle(
+                                                  fontSize: 12.5,
+                                                ),
+                                              ),
+                                            );
                                           }).toList(),
                                           onChanged: _onMarqueChanged,
                                         ),
@@ -972,27 +1006,55 @@ class _RegisterPageState extends State<RegisterPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text('Modèle', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                                    const Text(
+                                      'Modèle',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                     const SizedBox(height: 4),
                                     Container(
                                       height: 48,
-                                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                      ),
                                       decoration: BoxDecoration(
                                         color: Colors.white,
                                         borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(color: AppColors.bordure),
+                                        border: Border.all(
+                                          color: AppColors.bordure,
+                                        ),
                                       ),
                                       child: DropdownButtonHideUnderline(
                                         child: DropdownButton<String>(
                                           isExpanded: true,
-                                          value: modelesDisponibles.contains(_selectedModele)
+                                          value:
+                                              modelesDisponibles.contains(
+                                                _selectedModele,
+                                              )
                                               ? _selectedModele
-                                              : (modelesDisponibles.isNotEmpty ? modelesDisponibles.first : null),
+                                              : (modelesDisponibles.isNotEmpty
+                                                    ? modelesDisponibles.first
+                                                    : null),
                                           items: modelesDisponibles.map((m) {
-                                            return DropdownMenuItem(value: m, child: Text(m, style: const TextStyle(fontSize: 12.5), overflow: TextOverflow.ellipsis));
+                                            return DropdownMenuItem(
+                                              value: m,
+                                              child: Text(
+                                                m,
+                                                style: const TextStyle(
+                                                  fontSize: 12.5,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            );
                                           }).toList(),
                                           onChanged: (val) {
-                                            if (val != null) setState(() => _selectedModele = val);
+                                            if (val != null) {
+                                              setState(
+                                                () => _selectedModele = val,
+                                              );
+                                            }
                                           },
                                         ),
                                       ),
@@ -1011,27 +1073,52 @@ class _RegisterPageState extends State<RegisterPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text('Couleur', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                                    const Text(
+                                      'Couleur',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                     const SizedBox(height: 4),
                                     Container(
                                       height: 48,
-                                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                      ),
                                       decoration: BoxDecoration(
                                         color: Colors.white,
                                         borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(color: AppColors.bordure),
+                                        border: Border.all(
+                                          color: AppColors.bordure,
+                                        ),
                                       ),
                                       child: DropdownButtonHideUnderline(
                                         child: DropdownButton<String>(
                                           isExpanded: true,
-                                          value: kCarColors.contains(_selectedCouleur)
+                                          value:
+                                              kCarColors.contains(
+                                                _selectedCouleur,
+                                              )
                                               ? _selectedCouleur
                                               : 'Noir',
                                           items: kCarColors.map((c) {
-                                            return DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 12.5)));
+                                            return DropdownMenuItem(
+                                              value: c,
+                                              child: Text(
+                                                c,
+                                                style: const TextStyle(
+                                                  fontSize: 12.5,
+                                                ),
+                                              ),
+                                            );
                                           }).toList(),
                                           onChanged: (val) {
-                                            if (val != null) setState(() => _selectedCouleur = val);
+                                            if (val != null) {
+                                              setState(
+                                                () => _selectedCouleur = val,
+                                              );
+                                            }
                                           },
                                         ),
                                       ),
@@ -1044,18 +1131,42 @@ class _RegisterPageState extends State<RegisterPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text('Immatriculation', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                                    const Text(
+                                      'Immatriculation',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                     const SizedBox(height: 4),
                                     TextFormField(
                                       controller: _immatriculationController,
                                       style: const TextStyle(fontSize: 12.5),
                                       decoration: InputDecoration(
                                         hintText: '220 TUN 1234',
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 12,
+                                            ),
                                         filled: true,
                                         fillColor: Colors.white,
-                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.bordure)),
-                                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.bordure)),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            14,
+                                          ),
+                                          borderSide: const BorderSide(
+                                            color: AppColors.bordure,
+                                          ),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            14,
+                                          ),
+                                          borderSide: const BorderSide(
+                                            color: AppColors.bordure,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -1082,23 +1193,31 @@ class _RegisterPageState extends State<RegisterPage> {
                                   return Padding(
                                     padding: const EdgeInsets.only(left: 8),
                                     child: InkWell(
-                                      onTap: () => setState(() => _placesDisponibles = count),
+                                      onTap: () => setState(
+                                        () => _placesDisponibles = count,
+                                      ),
                                       borderRadius: BorderRadius.circular(50),
                                       child: Container(
                                         width: 34,
                                         height: 34,
                                         decoration: BoxDecoration(
-                                          color: isSel ? AppColors.primaire : Colors.white,
+                                          color: isSel
+                                              ? AppColors.primaire
+                                              : Colors.white,
                                           shape: BoxShape.circle,
                                           border: Border.all(
-                                            color: isSel ? AppColors.primaire : AppColors.bordure,
+                                            color: isSel
+                                                ? AppColors.primaire
+                                                : AppColors.bordure,
                                           ),
                                         ),
                                         child: Center(
                                           child: Text(
                                             '$count',
                                             style: TextStyle(
-                                              color: isSel ? Colors.white : AppColors.texte,
+                                              color: isSel
+                                                  ? Colors.white
+                                                  : AppColors.texte,
                                               fontWeight: FontWeight.bold,
                                               fontSize: 13,
                                             ),
@@ -1167,7 +1286,8 @@ class _RegisterPageState extends State<RegisterPage> {
                           size: 19,
                         ),
                         onPressed: () => setState(
-                          () => _obscureConfirmPassword = !_obscureConfirmPassword,
+                          () => _obscureConfirmPassword =
+                              !_obscureConfirmPassword,
                         ),
                       ),
                     ),
@@ -1195,25 +1315,54 @@ class _RegisterPageState extends State<RegisterPage> {
                           width: 20,
                           height: 20,
                           decoration: BoxDecoration(
-                            color: _acceptTerms ? AppColors.primaire : Colors.transparent,
+                            color: _acceptTerms
+                                ? AppColors.primaire
+                                : Colors.transparent,
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: _acceptTerms ? AppColors.primaire : AppColors.texte2.withValues(alpha: 0.5),
+                              color: _acceptTerms
+                                  ? AppColors.primaire
+                                  : AppColors.texte2.withValues(alpha: 0.5),
                               width: 1.6,
                             ),
                           ),
                           child: _acceptTerms
-                              ? const Icon(Icons.check, size: 14, color: Colors.white)
+                              ? const Icon(
+                                  Icons.check,
+                                  size: 14,
+                                  color: Colors.white,
+                                )
                               : null,
                         ),
                         const SizedBox(width: 10),
                         const Expanded(
                           child: Text(
-                            "J'accepte la charte étudiante & les conditions d'utilisation",
-                            style: TextStyle(fontSize: 12.5, color: AppColors.texte2),
+                            "J'accepte la charte étudiante et la politique de confidentialité",
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: AppColors.texte2,
+                            ),
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const PrivacyPolicyPage(),
+                        ),
+                      ),
+                      child: const Text(
+                        'Lire la politique de confidentialité (FR / 中文)',
+                        style: TextStyle(
+                          color: AppColors.primaire,
+                          fontSize: 12,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -1231,10 +1380,20 @@ class _RegisterPageState extends State<RegisterPage> {
                             child: OutlinedButton(
                               onPressed: () => _goToStep(_currentStep - 1),
                               style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: AppColors.bordure),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                                side: const BorderSide(
+                                  color: AppColors.bordure,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(28),
+                                ),
                               ),
-                              child: const Text('Précédent', style: TextStyle(color: AppColors.texte, fontWeight: FontWeight.w600)),
+                              child: const Text(
+                                'Précédent',
+                                style: TextStyle(
+                                  color: AppColors.texte,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -1249,10 +1408,20 @@ class _RegisterPageState extends State<RegisterPage> {
                               backgroundColor: AppColors.primaire,
                               foregroundColor: Colors.white,
                               elevation: 3,
-                              shadowColor: AppColors.primaire.withValues(alpha: 0.35),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                              shadowColor: AppColors.primaire.withValues(
+                                alpha: 0.35,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(28),
+                              ),
                             ),
-                            child: const Text('Continuer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                            child: const Text(
+                              'Continuer',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -1268,15 +1437,26 @@ class _RegisterPageState extends State<RegisterPage> {
                         foregroundColor: Colors.white,
                         elevation: 3,
                         shadowColor: AppColors.primaire.withValues(alpha: 0.35),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(28),
+                        ),
                       ),
                       child: _isLoading
                           ? const SizedBox(
                               height: 22,
                               width: 22,
-                              child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Colors.white,
+                              ),
                             )
-                          : const Text('Login', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          : const Text(
+                              'Login',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                     ),
                   ),
                 ],

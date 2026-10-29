@@ -1,40 +1,37 @@
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'app/theme.dart';
+import 'core/services/supabase_service.dart';
 import 'features/trajet/services/trajet_service.dart';
 import 'screens/accueil_page.dart';
 import 'features/user/screens/login_page.dart';
 import 'features/user/screens/register_page.dart';
 import 'features/user/screens/forgot_password_page.dart';
 import 'features/user/screens/profile_page.dart';
+import 'features/user/screens/privacy_policy_page.dart';
 import 'features/onboarding/screens/onboarding_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-  }
   await initializeDateFormatting('fr_FR', null);
+
+  await SupabaseService.initialize();
 
   // Module Trajets : lit les trajets dans SQLite avant d'afficher l'accueil
   await TrajetService.instance.charger();
 
-  runApp(const CovoiturageApp());
+  runApp(const UniDriveApp());
 }
 
-class CovoiturageApp extends StatelessWidget {
-  const CovoiturageApp({super.key});
+class UniDriveApp extends StatelessWidget {
+  const UniDriveApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Covoiturage Étudiant',
+      title: 'UniDrive',
       debugShowCheckedModeBanner: false,
       locale: const Locale('fr', 'FR'),
       supportedLocales: const [Locale('fr', 'FR'), Locale('en', 'US')],
@@ -96,6 +93,7 @@ class CovoiturageApp extends StatelessWidget {
         '/forgot-password': (context) => const ForgotPasswordPage(),
         '/accueil': (context) => const AccueilPage(),
         '/profile': (context) => const ProfilePage(),
+        '/privacy-policy': (context) => const PrivacyPolicyPage(),
       },
     );
   }

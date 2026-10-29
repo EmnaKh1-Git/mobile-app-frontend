@@ -8,6 +8,7 @@ import 'forgot_password_page.dart';
 import 'widgets/captcha_widget.dart';
 import 'widgets/google_sign_in_modal.dart';
 import 'widgets/auth_map_background.dart';
+import 'privacy_policy_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -183,6 +184,24 @@ class _LoginPageState extends State<LoginPage> {
                     ),
 
                     const SizedBox(height: 24),
+
+                    Center(
+                      child: TextButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const PrivacyPolicyPage(),
+                          ),
+                        ),
+                        child: const Text(
+                          'Lire la politique de confidentialité',
+                          style: TextStyle(
+                            color: AppColors.primaire,
+                            fontSize: 12.5,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                    ),
 
                     // Message d'erreur élégant si présent
                     if (_errorMessage != null) ...[
@@ -386,7 +405,9 @@ class _LoginPageState extends State<LoginPage> {
                                     border: Border.all(
                                       color: _rememberMe
                                           ? AppColors.primaire
-                                          : AppColors.texte2.withValues(alpha: 0.5),
+                                          : AppColors.texte2.withValues(
+                                              alpha: 0.5,
+                                            ),
                                       width: 1.6,
                                     ),
                                   ),
@@ -457,7 +478,9 @@ class _LoginPageState extends State<LoginPage> {
                           backgroundColor: AppColors.primaire,
                           foregroundColor: Colors.white,
                           elevation: 3,
-                          shadowColor: AppColors.primaire.withValues(alpha: 0.35),
+                          shadowColor: AppColors.primaire.withValues(
+                            alpha: 0.35,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(28),
                           ),

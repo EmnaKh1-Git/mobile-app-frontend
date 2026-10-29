@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../app/theme.dart';
 import '../../user/screens/login_page.dart';
 import '../../user/screens/register_page.dart';
 import '../../user/screens/widgets/auth_map_background.dart';
+import '../../user/screens/privacy_policy_page.dart';
 
 // ============================================================================
 // ÉCRAN 1 : SPLASH SCREEN PROFESSIONNEL AVEC LA NOUVELLE PALETTE BOTANIQUE
@@ -23,6 +26,7 @@ class _AppStartupPageState extends State<AppStartupPage>
   late final AnimationController _entrance;
   bool _didNavigate = false;
   Timer? _startupTimer;
+  bool _privacyDialogShown = false;
 
   @override
   void initState() {
@@ -31,19 +35,61 @@ class _AppStartupPageState extends State<AppStartupPage>
       vsync: this,
       duration: const Duration(milliseconds: 1100),
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await _showPrivacyNoticeIfNeeded();
       if (!mounted) return;
       if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
         _entrance.value = 1;
         _openOnboarding();
         return;
       }
+
       _entrance.forward();
       _startupTimer = Timer(
         const Duration(milliseconds: 1950),
         _openOnboarding,
       );
     });
+  }
+
+  Future<void> _showPrivacyNoticeIfNeeded() async {
+    if (_privacyDialogShown) return;
+    final preferences = await SharedPreferences.getInstance();
+    if (!mounted || preferences.getBool('privacy_policy_accepted') == true) {
+      return;
+    }
+    _privacyDialogShown = true;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Votre vie privée compte'),
+        content: const Text(
+          'Lors de votre première utilisation, veuillez lire la politique de '
+          'confidentialité d’UniDrive. Elle est disponible en français et en chinois.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const PrivacyPolicyPage(),
+              ),
+            ),
+            child: const Text('Lire la politique'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              await preferences.setBool('privacy_policy_accepted', true);
+              if (dialogContext.mounted) {
+                Navigator.of(dialogContext).pop();
+              }
+            },
+            child: const Text('J’ai lu et j’accepte'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _openOnboarding() {
@@ -56,7 +102,10 @@ class _AppStartupPageState extends State<AppStartupPage>
         transitionDuration: const Duration(milliseconds: 550),
         pageBuilder: (_, _, _) => const AppIntroPage(),
         transitionsBuilder: (_, animation, _, child) => FadeTransition(
-          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+          opacity: CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          ),
           child: child,
         ),
       ),
@@ -148,7 +197,9 @@ class _AppStartupPageState extends State<AppStartupPage>
                                   ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: AppColors.accent.withValues(alpha: 0.25),
+                                      color: AppColors.accent.withValues(
+                                        alpha: 0.25,
+                                      ),
                                       blurRadius: 38,
                                       spreadRadius: 4,
                                     ),
@@ -160,7 +211,7 @@ class _AppStartupPageState extends State<AppStartupPage>
                               ),
                               const SizedBox(height: 28),
                               const Text(
-                                'Covoiturage Étudiant',
+                                'UniDrive',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: Colors.white,
@@ -174,7 +225,9 @@ class _AppStartupPageState extends State<AppStartupPage>
                                 'Votre trajet, notre destination verte.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  color: AppColors.creme.withValues(alpha: 0.88),
+                                  color: AppColors.creme.withValues(
+                                    alpha: 0.88,
+                                  ),
                                   fontSize: 15,
                                   letterSpacing: 0.2,
                                   fontWeight: FontWeight.w500,
@@ -196,7 +249,9 @@ class _AppStartupPageState extends State<AppStartupPage>
                             child: CircularProgressIndicator(
                               strokeWidth: 2.4,
                               color: AppColors.accent,
-                              backgroundColor: Colors.white.withValues(alpha: 0.15),
+                              backgroundColor: Colors.white.withValues(
+                                alpha: 0.15,
+                              ),
                             ),
                           ),
                           const SizedBox(height: 14),
@@ -340,7 +395,8 @@ class AppIntroPage extends StatefulWidget {
   State<AppIntroPage> createState() => _AppIntroPageState();
 }
 
-class _AppIntroPageState extends State<AppIntroPage> with TickerProviderStateMixin {
+class _AppIntroPageState extends State<AppIntroPage>
+    with TickerProviderStateMixin {
   final PageController _pageController = PageController();
   late final AnimationController _motion;
   int _currentPage = 0;
@@ -348,20 +404,17 @@ class _AppIntroPageState extends State<AppIntroPage> with TickerProviderStateMix
   static const _slides = [
     _IntroContent(
       title: 'Le trajet devient plus simple',
-      description:
-          'Trouvez facilement des conducteurs et des passagers étudiants qui partagent votre destination.',
+      description: 'Trouvez facilement des conducteurs et des passagers étudiants qui partagent votre destination.',
       kind: _IllustrationKind.route,
     ),
     _IntroContent(
       title: 'Voyagez mieux, dépensez moins',
-      description:
-          'Partagez les frais de route, économisez sur vos déplacements et profitez d\'une solution écoresponsable.',
+      description: 'Partagez les frais de route, économisez sur vos déplacements et profitez d\'une solution écoresponsable.',
       kind: _IllustrationKind.savings,
     ),
     _IntroContent(
       title: 'La confiance à chaque trajet',
-      description:
-          'Comptes étudiants vérifiés, avis et trajets organisés en toute sérénité au sein du campus.',
+      description: 'Comptes étudiants vérifiés, avis et trajets organisés en toute sérénité au sein du campus.',
       kind: _IllustrationKind.trust,
     ),
   ];
@@ -427,22 +480,24 @@ class _AppIntroPageState extends State<AppIntroPage> with TickerProviderStateMix
           // ------------------------------------------------------------------
           // SLIDE 1, 2, 3 : Présentation interactive des fonctionnalités
           // ------------------------------------------------------------------
-          ..._slides.map((content) => _FeatureSlideLayout(
-                content: content,
-                animation: _motion,
-                compact: compact,
-                currentPage: _currentPage,
-                totalPages: totalPages,
-                onSkip: _finishToLogin,
-                onBack: () => _goTo(_currentPage - 1),
-                onNext: () {
-                  if (_currentPage == totalPages - 1) {
-                    _finishToLogin();
-                  } else {
-                    _goTo(_currentPage + 1);
-                  }
-                },
-              )),
+          ..._slides.map(
+            (content) => _FeatureSlideLayout(
+              content: content,
+              animation: _motion,
+              compact: compact,
+              currentPage: _currentPage,
+              totalPages: totalPages,
+              onSkip: _finishToLogin,
+              onBack: () => _goTo(_currentPage - 1),
+              onNext: () {
+                if (_currentPage == totalPages - 1) {
+                  _finishToLogin();
+                } else {
+                  _goTo(_currentPage + 1);
+                }
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -478,7 +533,11 @@ class _WelcomeHeroCoverSlide extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Color(0xFF1B4E0E), Color(0xFF2A7C13), Color(0xFF13380A)],
+                colors: [
+                  Color(0xFF1B4E0E),
+                  Color(0xFF2A7C13),
+                  Color(0xFF13380A),
+                ],
               ),
             ),
           ),
@@ -503,7 +562,10 @@ class _WelcomeHeroCoverSlide extends StatelessWidget {
         // Contenu typographique et boutons (Screen 1 de l'image)
         SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28.0, vertical: 20.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 28.0,
+              vertical: 20.0,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -718,7 +780,7 @@ class _FeatureSlideLayout extends StatelessWidget {
                   ),
                   const Spacer(),
                   const Text(
-                    'Covoiturage Étudiant',
+                    'UniDrive',
                     style: TextStyle(
                       color: AppColors.primaire,
                       fontSize: 13.5,
@@ -836,7 +898,9 @@ class _FeatureSlideLayout extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          currentPage == totalPages - 1 ? 'Commencer' : 'Suivant',
+                          currentPage == totalPages - 1
+                              ? 'Commencer'
+                              : 'Suivant',
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 15,
@@ -877,42 +941,50 @@ class _Illustration extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, box) {
-      final w = box.maxWidth;
-      return Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: w,
-            height: 270,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(38),
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Colors.white, Color(0xFFF3F8F1)],
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primaire.withValues(alpha: 0.08),
-                  blurRadius: 30,
-                  offset: const Offset(0, 14),
+    return LayoutBuilder(
+      builder: (context, box) {
+        final w = box.maxWidth;
+        return Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: w,
+              height: 270,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(38),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Colors.white, Color(0xFFF3F8F1)],
                 ),
-              ],
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primaire.withValues(alpha: 0.08),
+                    blurRadius: 30,
+                    offset: const Offset(0, 14),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Positioned(
-            top: 20,
-            right: 24,
-            child: _Glow(size: 110, color: AppColors.accent.withValues(alpha: 0.18)),
-          ),
-          if (kind == _IllustrationKind.route) _RouteArt(width: w, progress: progress),
-          if (kind == _IllustrationKind.savings) _SavingsArt(width: w, progress: progress),
-          if (kind == _IllustrationKind.trust) _TrustArt(width: w, progress: progress),
-        ],
-      );
-    });
+            Positioned(
+              top: 20,
+              right: 24,
+              child: _Glow(
+                size: 110,
+                color: AppColors.accent.withValues(alpha: 0.18),
+              ),
+            ),
+            if (kind == _IllustrationKind.route)
+              _RouteArt(width: w, progress: progress),
+            if (kind == _IllustrationKind.savings)
+              _SavingsArt(width: w, progress: progress),
+            if (kind == _IllustrationKind.trust)
+              _TrustArt(width: w, progress: progress),
+          ],
+        );
+      },
+    );
   }
 }
 
@@ -924,34 +996,53 @@ class _RouteArt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final shift = math.sin(progress * math.pi * 2) * 3;
-    return Stack(children: [
-      Positioned.fill(child: CustomPaint(painter: _RoadPainter(progress: progress))),
-      Positioned(
-        left: width * 0.12,
-        top: 60,
-        child: const _Tag(icon: Icons.trip_origin_rounded, text: 'Départ', tint: AppColors.primaire),
-      ),
-      Positioned(
-        right: width * 0.10,
-        bottom: 50,
-        child: const _Tag(icon: Icons.location_on_rounded, text: 'Faculté', tint: AppColors.accent),
-      ),
-      const Positioned(
-        left: 20,
-        bottom: 26,
-        child: _InfoCard(icon: Icons.near_me_rounded, title: 'Trajet partagé', subtitle: '18 min • 12 km'),
-      ),
-      Positioned(
-        left: width * (0.33 + progress * 0.22),
-        top: 126 + shift,
-        child: const _Car(),
-      ),
-      const Positioned(
-        right: 22,
-        top: 22,
-        child: _FloatingIcon(icon: Icons.navigation_rounded, color: AppColors.primaire),
-      ),
-    ]);
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: CustomPaint(painter: _RoadPainter(progress: progress)),
+        ),
+        Positioned(
+          left: width * 0.12,
+          top: 60,
+          child: const _Tag(
+            icon: Icons.trip_origin_rounded,
+            text: 'Départ',
+            tint: AppColors.primaire,
+          ),
+        ),
+        Positioned(
+          right: width * 0.10,
+          bottom: 50,
+          child: const _Tag(
+            icon: Icons.location_on_rounded,
+            text: 'Faculté',
+            tint: AppColors.accent,
+          ),
+        ),
+        const Positioned(
+          left: 20,
+          bottom: 26,
+          child: _InfoCard(
+            icon: Icons.near_me_rounded,
+            title: 'Trajet partagé',
+            subtitle: '18 min • 12 km',
+          ),
+        ),
+        Positioned(
+          left: width * (0.33 + progress * 0.22),
+          top: 126 + shift,
+          child: const _Car(),
+        ),
+        const Positioned(
+          right: 22,
+          top: 22,
+          child: _FloatingIcon(
+            icon: Icons.navigation_rounded,
+            color: AppColors.primaire,
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -963,31 +1054,40 @@ class _SavingsArt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bob = math.sin(progress * math.pi * 2) * 4;
-    return Stack(alignment: Alignment.center, children: [
-      Positioned.fill(child: CustomPaint(painter: _ConnectionsPainter(progress: progress))),
-      Positioned(
-        top: 24 + bob,
-        left: 26,
-        child: const _Avatar(color: AppColors.sable, initials: 'A'),
-      ),
-      Positioned(
-        top: 24 - bob,
-        right: 26,
-        child: const _Avatar(color: AppColors.soutien, initials: 'M'),
-      ),
-      Positioned(top: 86, child: _FareSplitCard(progress: progress)),
-      Positioned(
-        bottom: 36 + bob,
-        left: width * 0.18,
-        child: const _Avatar(color: AppColors.creme, initials: 'S', size: 40),
-      ),
-      Positioned(
-        bottom: 36 - bob,
-        right: width * 0.18,
-        child: const _Avatar(color: Color(0xFFD6ECCB), initials: 'Y', size: 40),
-      ),
-      const Positioned(bottom: 32, child: _Car()),
-    ]);
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Positioned.fill(
+          child: CustomPaint(painter: _ConnectionsPainter(progress: progress)),
+        ),
+        Positioned(
+          top: 24 + bob,
+          left: 26,
+          child: const _Avatar(color: AppColors.sable, initials: 'A'),
+        ),
+        Positioned(
+          top: 24 - bob,
+          right: 26,
+          child: const _Avatar(color: AppColors.soutien, initials: 'M'),
+        ),
+        Positioned(top: 86, child: _FareSplitCard(progress: progress)),
+        Positioned(
+          bottom: 36 + bob,
+          left: width * 0.18,
+          child: const _Avatar(color: AppColors.creme, initials: 'S', size: 40),
+        ),
+        Positioned(
+          bottom: 36 - bob,
+          right: width * 0.18,
+          child: const _Avatar(
+            color: Color(0xFFD6ECCB),
+            initials: 'Y',
+            size: 40,
+          ),
+        ),
+        const Positioned(bottom: 32, child: _Car()),
+      ],
+    );
   }
 }
 
@@ -1031,7 +1131,11 @@ class _FareSplitCard extends StatelessWidget {
                       color: AppColors.champFond,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.groups_rounded, color: AppColors.primaire, size: 19),
+                    child: const Icon(
+                      Icons.groups_rounded,
+                      color: AppColors.primaire,
+                      size: 19,
+                    ),
                   ),
                   const SizedBox(width: 9),
                   const Expanded(
@@ -1101,129 +1205,143 @@ class _TrustArt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pulse = 0.97 + (math.sin(progress * math.pi * 2) + 1) * 0.015;
-    return Stack(alignment: Alignment.center, children: [
-      Positioned.fill(
-        child: CustomPaint(
-          painter: _ConnectionsPainter(progress: progress, trust: true),
-        ),
-      ),
-      Transform.scale(
-        scale: pulse,
-        child: Container(
-          width: 214,
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(26),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primaire.withValues(alpha: 0.12),
-                blurRadius: 28,
-                offset: const Offset(0, 14),
-              ),
-            ],
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Positioned.fill(
+          child: CustomPaint(
+            painter: _ConnectionsPainter(progress: progress, trust: true),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Row(
-                children: [
-                  _Avatar(color: AppColors.sable, initials: 'N', size: 48),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Nour Ben Ali',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.texte,
-                            fontSize: 13.5,
+        ),
+        Transform.scale(
+          scale: pulse,
+          child: Container(
+            width: 214,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(26),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primaire.withValues(alpha: 0.12),
+                  blurRadius: 28,
+                  offset: const Offset(0, 14),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Row(
+                  children: [
+                    _Avatar(color: AppColors.sable, initials: 'N', size: 48),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Nour Ben Ali',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.texte,
+                              fontSize: 13.5,
+                            ),
                           ),
-                        ),
-                        SizedBox(height: 3),
-                        Text(
-                          'Conductrice vérifiée',
-                          style: TextStyle(color: AppColors.texte2, fontSize: 11),
-                        ),
-                      ],
+                          SizedBox(height: 3),
+                          Text(
+                            'Conductrice vérifiée',
+                            style: TextStyle(
+                              color: AppColors.texte2,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Icon(Icons.star_rounded, color: Color(0xFFFFB648), size: 18),
-                  Text(
-                    '4.9',
-                    style: TextStyle(
-                      color: AppColors.texte,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
+                    Icon(
+                      Icons.star_rounded,
+                      color: Color(0xFFFFB648),
+                      size: 18,
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Container(height: 1, color: AppColors.bordure),
-              const SizedBox(height: 10),
-              const Row(
-                children: [
-                  Icon(Icons.route_rounded, color: AppColors.primaire, size: 16),
-                  SizedBox(width: 8),
-                  Text(
-                    'Ariana  →  ESPRIT',
-                    style: TextStyle(
-                      color: AppColors.texte,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                    Text(
+                      '4.9',
+                      style: TextStyle(
+                        color: AppColors.texte,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Container(height: 1, color: AppColors.bordure),
+                const SizedBox(height: 10),
+                const Row(
+                  children: [
+                    Icon(
+                      Icons.route_rounded,
+                      color: AppColors.primaire,
+                      size: 16,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Ariana  →  ESPRIT',
+                      style: TextStyle(
+                        color: AppColors.texte,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-      Positioned(
-        top: 28,
-        right: width * 0.13,
-        child: Container(
-          padding: const EdgeInsets.all(9),
-          decoration: BoxDecoration(
-            color: AppColors.champFond,
-            borderRadius: BorderRadius.circular(16),
+        Positioned(
+          top: 28,
+          right: width * 0.13,
+          child: Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: AppColors.champFond,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.verified_user_rounded,
+              color: AppColors.primaire,
+              size: 22,
+            ),
           ),
-          child: const Icon(
-            Icons.verified_user_rounded,
+        ),
+        Positioned(
+          bottom: 26,
+          left: width * 0.10,
+          child: const _FloatingIcon(
+            icon: Icons.chat_bubble_rounded,
             color: AppColors.primaire,
-            size: 22,
           ),
         ),
-      ),
-      Positioned(
-        bottom: 26,
-        left: width * 0.10,
-        child: const _FloatingIcon(
-          icon: Icons.chat_bubble_rounded,
-          color: AppColors.primaire,
+        Positioned(
+          bottom: 34,
+          right: width * 0.10,
+          child: const _FloatingIcon(
+            icon: Icons.shield_rounded,
+            color: AppColors.accent,
+          ),
         ),
-      ),
-      Positioned(
-        bottom: 34,
-        right: width * 0.10,
-        child: const _FloatingIcon(
-          icon: Icons.shield_rounded,
-          color: AppColors.accent,
+        const Positioned(
+          top: 42,
+          left: 20,
+          child: _Tag(
+            icon: Icons.favorite_rounded,
+            text: 'Campus',
+            tint: Color(0xFFE26161),
+          ),
         ),
-      ),
-      const Positioned(
-        top: 42,
-        left: 20,
-        child: _Tag(
-          icon: Icons.favorite_rounded,
-          text: 'Campus',
-          tint: Color(0xFFE26161),
-        ),
-      ),
-    ]);
+      ],
+    );
   }
 }
 
@@ -1260,7 +1378,10 @@ class _RoadPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round,
     );
     final metric = path.computeMetrics().first;
-    final segment = metric.extractPath(0, metric.length * (0.25 + 0.55 * progress));
+    final segment = metric.extractPath(
+      0,
+      metric.length * (0.25 + 0.55 * progress),
+    );
     canvas.drawPath(
       segment,
       Paint()
@@ -1284,8 +1405,9 @@ class _ConnectionsPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = (trust ? AppColors.accent : AppColors.primaire)
-          .withValues(alpha: 0.22 + 0.12 * math.sin(progress * math.pi * 2).abs())
+      ..color = (trust ? AppColors.accent : AppColors.primaire).withValues(
+        alpha: 0.22 + 0.12 * math.sin(progress * math.pi * 2).abs(),
+      )
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
     if (trust) {
@@ -1332,56 +1454,56 @@ class _Car extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: 90,
-        height: 48,
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [AppColors.primaire, AppColors.accent],
+    width: 90,
+    height: 48,
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        colors: [AppColors.primaire, AppColors.accent],
+      ),
+      borderRadius: BorderRadius.circular(19),
+      boxShadow: [
+        BoxShadow(
+          color: AppColors.primaire.withValues(alpha: 0.25),
+          blurRadius: 14,
+          offset: const Offset(0, 7),
+        ),
+      ],
+    ),
+    child: Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: 44,
+          height: 18,
+          margin: const EdgeInsets.only(top: 4),
+          decoration: BoxDecoration(
+            color: AppColors.creme.withValues(alpha: 0.85),
+            borderRadius: BorderRadius.circular(10),
           ),
-          borderRadius: BorderRadius.circular(19),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primaire.withValues(alpha: 0.25),
-              blurRadius: 14,
-              offset: const Offset(0, 7),
-            ),
-          ],
         ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Container(
-              width: 44,
-              height: 18,
-              margin: const EdgeInsets.only(top: 4),
-              decoration: BoxDecoration(
-                color: AppColors.creme.withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-            Positioned(bottom: -5, left: 13, child: _wheel()),
-            Positioned(bottom: -5, right: 13, child: _wheel()),
-            const Positioned(
-              left: 5,
-              child: Icon(Icons.circle, size: 7, color: Color(0xFFFFE39A)),
-            ),
-            const Positioned(
-              right: 5,
-              child: Icon(Icons.circle, size: 7, color: Color(0xFFFFE39A)),
-            ),
-          ],
+        Positioned(bottom: -5, left: 13, child: _wheel()),
+        Positioned(bottom: -5, right: 13, child: _wheel()),
+        const Positioned(
+          left: 5,
+          child: Icon(Icons.circle, size: 7, color: Color(0xFFFFE39A)),
         ),
-      );
+        const Positioned(
+          right: 5,
+          child: Icon(Icons.circle, size: 7, color: Color(0xFFFFE39A)),
+        ),
+      ],
+    ),
+  );
 
   Widget _wheel() => Container(
-        width: 14,
-        height: 14,
-        decoration: BoxDecoration(
-          color: AppColors.primaireFonce,
-          border: Border.all(color: Colors.white, width: 2),
-          shape: BoxShape.circle,
-        ),
-      );
+    width: 14,
+    height: 14,
+    decoration: BoxDecoration(
+      color: AppColors.primaireFonce,
+      border: Border.all(color: Colors.white, width: 2),
+      shape: BoxShape.circle,
+    ),
+  );
 }
 
 class _Avatar extends StatelessWidget {
@@ -1392,30 +1514,30 @@ class _Avatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: size,
-        height: size,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: color,
-          border: Border.all(color: Colors.white, width: 2.5),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primaire.withValues(alpha: 0.12),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            ),
-          ],
+    width: size,
+    height: size,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: color,
+      border: Border.all(color: Colors.white, width: 2.5),
+      boxShadow: [
+        BoxShadow(
+          color: AppColors.primaire.withValues(alpha: 0.12),
+          blurRadius: 10,
+          offset: const Offset(0, 5),
         ),
-        child: Text(
-          initials,
-          style: TextStyle(
-            color: AppColors.texte,
-            fontWeight: FontWeight.w800,
-            fontSize: size * 0.35,
-          ),
-        ),
-      );
+      ],
+    ),
+    child: Text(
+      initials,
+      style: TextStyle(
+        color: AppColors.texte,
+        fontWeight: FontWeight.w800,
+        fontSize: size * 0.35,
+      ),
+    ),
+  );
 }
 
 class _Tag extends StatelessWidget {
@@ -1426,91 +1548,95 @@ class _Tag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primaire.withValues(alpha: 0.08),
-              blurRadius: 12,
-              offset: const Offset(0, 5),
-            ),
-          ],
+    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      boxShadow: [
+        BoxShadow(
+          color: AppColors.primaire.withValues(alpha: 0.08),
+          blurRadius: 12,
+          offset: const Offset(0, 5),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 15, color: tint),
-            const SizedBox(width: 6),
-            Text(
-              text,
-              style: const TextStyle(
-                color: AppColors.texte,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
+      ],
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 15, color: tint),
+        const SizedBox(width: 6),
+        Text(
+          text,
+          style: const TextStyle(
+            color: AppColors.texte,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-      );
+      ],
+    ),
+  );
 }
 
 class _InfoCard extends StatelessWidget {
-  const _InfoCard({required this.icon, required this.title, required this.subtitle});
+  const _InfoCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
   final IconData icon;
   final String title;
   final String subtitle;
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primaire.withValues(alpha: 0.10),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: AppColors.primaire.withValues(alpha: 0.10),
+          blurRadius: 18,
+          offset: const Offset(0, 8),
         ),
-        child: Row(
+      ],
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: AppColors.champFond,
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: Icon(icon, color: AppColors.primaire, size: 17),
+        ),
+        const SizedBox(width: 9),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: AppColors.champFond,
-                borderRadius: BorderRadius.circular(11),
+            Text(
+              title,
+              style: const TextStyle(
+                color: AppColors.texte,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
               ),
-              child: Icon(icon, color: AppColors.primaire, size: 17),
             ),
-            const SizedBox(width: 9),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppColors.texte,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: const TextStyle(color: AppColors.texte2, fontSize: 9.5),
-                ),
-              ],
+            const SizedBox(height: 3),
+            Text(
+              subtitle,
+              style: const TextStyle(color: AppColors.texte2, fontSize: 9.5),
             ),
           ],
         ),
-      );
+      ],
+    ),
+  );
 }
 
 class _FloatingIcon extends StatelessWidget {
@@ -1520,21 +1646,21 @@ class _FloatingIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: 42,
-        height: 42,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(15),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primaire.withValues(alpha: 0.10),
-              blurRadius: 14,
-              offset: const Offset(0, 6),
-            ),
-          ],
+    width: 42,
+    height: 42,
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(15),
+      boxShadow: [
+        BoxShadow(
+          color: AppColors.primaire.withValues(alpha: 0.10),
+          blurRadius: 14,
+          offset: const Offset(0, 6),
         ),
-        child: Icon(icon, color: color, size: 20),
-      );
+      ],
+    ),
+    child: Icon(icon, color: color, size: 20),
+  );
 }
 
 class _Glow extends StatelessWidget {
@@ -1544,13 +1670,11 @@ class _Glow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [color, color.withValues(alpha: 0)],
-          ),
-        ),
-      );
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
+    ),
+  );
 }

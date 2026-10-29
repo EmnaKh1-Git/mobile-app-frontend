@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
@@ -13,7 +12,8 @@ import '../models/reclamation.dart';
 import '../services/reclamation_service.dart';
 import '../services/reclamation_ai_service.dart';
 import '../../user/services/user_service.dart';
-import '../../../core/services/cloudinary_service.dart';
+import '../../../core/services/supabase_storage_service.dart';
+import '../../../core/services/ai_summarize_service.dart';
 
 class ReclamationPage extends StatelessWidget {
   const ReclamationPage({super.key});
@@ -179,6 +179,21 @@ class _AttachedImage extends StatelessWidget {
             height: 220,
             width: double.infinity,
             fit: BoxFit.cover,
+            loadingBuilder: (context, child, progress) {
+              if (progress == null) return child;
+              return Container(
+                height: 220,
+                color: AppColors.champFond,
+                alignment: Alignment.center,
+                child: const CircularProgressIndicator(strokeWidth: 2),
+              );
+            },
+            errorBuilder: (context, error, stackTrace) => Container(
+              height: 220,
+              color: AppColors.champFond,
+              alignment: Alignment.center,
+              child: const Icon(Icons.broken_image, size: 48, color: Colors.grey),
+            ),
           )
         : Image.file(
             File(path),
@@ -206,7 +221,13 @@ class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
   late ReclamationStatus _status;
   final TextEditingController _responseController = TextEditingController();
   StreamSubscription<dynamic>? _audioEventsSubscription;
-  bool _audioEnLecture = false;
+  String? _currentlyPlayingPath;
+
+  // Enregistrement vocal réponse admin
+  final AudioRecorder _responseRecorder = AudioRecorder();
+  bool _enregistrementReponse = false;
+  String? _reponseAudioPath;
+  bool _uploadVocalEnCours = false;
 
   @override
   void initState() {
@@ -216,7 +237,7 @@ class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
       event,
     ) {
       if (event == 'completed' && mounted) {
-        setState(() => _audioEnLecture = false);
+        setState(() => _currentlyPlayingPath = null);
       }
     });
   }
@@ -226,13 +247,14 @@ class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
     _audioChannel.invokeMethod<void>('stop');
     _audioEventsSubscription?.cancel();
     _responseController.dispose();
+    _responseRecorder.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Détail')),
+      appBar: AppBar(title: const Text('Détail de la réclamation')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -255,7 +277,7 @@ class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
                   _InfoRow(
                     label: 'Date',
                     value: DateFormat(
-                      'dd MMM yyyy',
+                      'dd MMM yyyy à HH:mm',
                       'fr_FR',
                     ).format(widget.reclamation.date),
                   ),
@@ -328,6 +350,8 @@ class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
               style: const TextStyle(height: 1.5),
             ),
           ),
+
+          // Réponses existantes de l'administration
           if (widget.reclamation.responses.isNotEmpty) ...[
             const SizedBox(height: 18),
             const Text(
@@ -338,77 +362,313 @@ class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
             ...widget.reclamation.responses.map(
               (response) => Card(
                 color: AppColors.primaireDoux,
-                child: ListTile(
-                  leading: const Icon(Icons.admin_panel_settings_outlined),
-                  title: Text(response.message),
-                  subtitle: Text(
-                    DateFormat(
-                      'dd/MM/yyyy à HH:mm',
-                      'fr_FR',
-                    ).format(response.date),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.admin_panel_settings_rounded,
+                            color: AppColors.primaire,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  response.message,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  DateFormat(
+                                    'dd/MM/yyyy à HH:mm',
+                                    'fr_FR',
+                                  ).format(response.date),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.texte2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (response.audioPath != null) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: AppColors.primaire.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              IconButton(
+                                icon: Icon(
+                                  _currentlyPlayingPath == response.audioPath
+                                      ? Icons.stop_circle_rounded
+                                      : Icons.play_circle_fill_rounded,
+                                  color: AppColors.primaire,
+                                  size: 32,
+                                ),
+                                onPressed: () => _toggleAudio(response.audioPath!),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _currentlyPlayingPath == response.audioPath
+                                      ? 'Lecture du vocal...'
+                                      : 'Écouter la réponse vocale',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primaire,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                              const Icon(
+                                Icons.graphic_eq_rounded,
+                                color: AppColors.primaire,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ),
             ),
           ],
+
+          // Formulaire de réponse pour l'administrateur
           if (UserService.instance.currentUser?.isAdmin ?? false) ...[
-            const SizedBox(height: 18),
-            const Text(
-              'Répondre à l’étudiant',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _responseController,
-              minLines: 2,
-              maxLines: 5,
-              decoration: const InputDecoration(
-                hintText: 'Écrire une réponse ou une demande d’information...',
-                border: OutlineInputBorder(),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: AppColors.primaire.withValues(alpha: 0.3),
+                  width: 1.5,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton.icon(
-                onPressed: _ajouterReponse,
-                icon: const Icon(Icons.send_outlined),
-                label: const Text('Envoyer la réponse'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.reply_rounded, color: AppColors.primaire),
+                      SizedBox(width: 8),
+                      Text(
+                        'Répondre à l’étudiant (Admin)',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primaire,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Saisie de texte
+                  TextField(
+                    controller: _responseController,
+                    minLines: 2,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      hintText: 'Rédigez votre réponse ou utilisez le vocal...',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Section enregistrement vocal
+                  if (_reponseAudioPath == null)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _enregistrementReponse
+                                ? _arreterReponseVocale
+                                : _demarrerReponseVocale,
+                            icon: Icon(
+                              _enregistrementReponse
+                                  ? Icons.stop_circle_rounded
+                                  : Icons.mic_rounded,
+                              color: _enregistrementReponse
+                                  ? Colors.red
+                                  : AppColors.primaire,
+                            ),
+                            label: Text(
+                              _enregistrementReponse
+                                  ? 'Arrêter l’enregistrement'
+                                  : 'Répondre par vocal 🎤',
+                              style: TextStyle(
+                                color: _enregistrementReponse
+                                    ? Colors.red
+                                    : AppColors.primaire,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              side: BorderSide(
+                                color: _enregistrementReponse
+                                    ? Colors.red
+                                    : AppColors.primaire,
+                                width: 1.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaireDoux,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.primaire),
+                      ),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              _currentlyPlayingPath == _reponseAudioPath
+                                  ? Icons.stop_circle_rounded
+                                  : Icons.play_circle_fill_rounded,
+                              color: AppColors.primaire,
+                              size: 28,
+                            ),
+                            onPressed: () => _toggleAudio(_reponseAudioPath!),
+                            tooltip: 'Écouter l’aperçu',
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Vocal enregistré prêt à envoyer',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.red),
+                            onPressed: () {
+                              if (_currentlyPlayingPath == _reponseAudioPath) {
+                                _audioChannel.invokeMethod<void>('stop');
+                                setState(() => _currentlyPlayingPath = null);
+                              }
+                              setState(() => _reponseAudioPath = null);
+                            },
+                            tooltip: 'Supprimer le vocal',
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  const SizedBox(height: 12),
+
+                  // Bouton d'envoi
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _uploadVocalEnCours ? null : _envoyerReponseAdmin,
+                      icon: _uploadVocalEnCours
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.send_rounded),
+                      label: Text(
+                        _uploadVocalEnCours
+                          ? 'Envoi en cours...'
+                          : (_reponseAudioPath != null && _responseController.text.trim().isEmpty)
+                              ? 'Envoyer la réponse vocale'
+                              : 'Envoyer la réponse',
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
+
+          // Pièces jointes initiales de l'étudiant
           if (widget.reclamation.imagePath != null ||
               widget.reclamation.audioPath != null ||
               widget.reclamation.aiConseil != null) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
+            const Text(
+              'Pièces jointes & Analyse',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
             if (widget.reclamation.imagePath != null)
               _AttachedImage(path: widget.reclamation.imagePath!),
-            if (widget.reclamation.audioPath != null)
+            if (widget.reclamation.audioPath != null) ...[
+              const SizedBox(height: 8),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.mic_none),
-                title: const Text('Message vocal joint'),
+                leading: const Icon(Icons.mic_none, color: AppColors.primaire),
+                title: const Text('Message vocal étudiant joint'),
                 subtitle: Text(
-                  _audioEnLecture
+                  _currentlyPlayingPath == widget.reclamation.audioPath
                       ? 'Lecture en cours...'
                       : 'Appuyer pour écouter',
                 ),
                 trailing: IconButton(
                   icon: Icon(
-                    _audioEnLecture
+                    _currentlyPlayingPath == widget.reclamation.audioPath
                         ? Icons.stop_circle_outlined
                         : Icons.play_circle_outline,
+                    color: AppColors.primaire,
+                    size: 30,
                   ),
-                  onPressed: _lireAudio,
+                  onPressed: () => _toggleAudio(widget.reclamation.audioPath!),
                 ),
               ),
+            ],
             if (widget.reclamation.aiConseil != null) ...[
+              const SizedBox(height: 12),
               const Text(
                 'Conseil de l’assistance IA',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
-              const SizedBox(height: 8),
-              Text(widget.reclamation.aiConseil!),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.primaireDoux,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(widget.reclamation.aiConseil!),
+              ),
             ],
           ],
         ],
@@ -416,35 +676,84 @@ class _ReclamationDetailsPageState extends State<ReclamationDetailsPage> {
     );
   }
 
-  void _ajouterReponse() {
-    final message = _responseController.text.trim();
-    if (message.isEmpty) {
+  Future<void> _demarrerReponseVocale() async {
+    if (!await _responseRecorder.hasPermission()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('L’accès au microphone est nécessaire.')),
+      );
+      return;
+    }
+    final path =
+        '${Directory.systemTemp.path}/admin_reponse_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    await _responseRecorder.start(
+      const RecordConfig(encoder: AudioEncoder.aacLc),
+      path: path,
+    );
+    if (mounted) setState(() => _enregistrementReponse = true);
+  }
+
+  Future<void> _arreterReponseVocale() async {
+    final path = await _responseRecorder.stop();
+    if (mounted) {
+      setState(() {
+        _enregistrementReponse = false;
+        _reponseAudioPath = path;
+      });
+    }
+  }
+
+  Future<void> _envoyerReponseAdmin() async {
+    final messageText = _responseController.text.trim();
+    if (messageText.isEmpty && _reponseAudioPath == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Écrivez une réponse avant de l’envoyer.'),
+          content: Text('Saisissez un message ou enregistrez un vocal.'),
         ),
       );
       return;
     }
 
-    ReclamationService.instance.ajouterReponse(widget.reclamation.id, message);
-    _responseController.clear();
-    setState(() {});
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Réponse envoyée à l’étudiant.')),
+    setState(() => _uploadVocalEnCours = true);
+
+    String? audioUrl;
+    if (_reponseAudioPath != null) {
+      // Upload vocal vers Supabase Storage
+      audioUrl = await SupabaseStorageService.instance.uploadAudio(_reponseAudioPath!);
+      audioUrl ??= _reponseAudioPath; // fallback local
+    }
+
+    final messageFinal = messageText.isNotEmpty
+        ? messageText
+        : '🎤 [Réponse vocale de l’administration]';
+
+    ReclamationService.instance.ajouterReponse(
+      widget.reclamation.id,
+      messageFinal,
+      audioPath: audioUrl,
     );
+
+    if (mounted) {
+      _responseController.clear();
+      setState(() {
+        _uploadVocalEnCours = false;
+        _reponseAudioPath = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Réponse envoyée avec succès.')),
+      );
+    }
   }
 
-  Future<void> _lireAudio() async {
+  Future<void> _toggleAudio(String path) async {
     try {
-      if (_audioEnLecture) {
+      if (_currentlyPlayingPath == path) {
         await _audioChannel.invokeMethod<void>('stop');
-        if (mounted) setState(() => _audioEnLecture = false);
+        if (mounted) setState(() => _currentlyPlayingPath = null);
       } else {
-        await _audioChannel.invokeMethod<void>('play', {
-          'path': widget.reclamation.audioPath!,
-        });
-        if (mounted) setState(() => _audioEnLecture = true);
+        await _audioChannel.invokeMethod<void>('stop');
+        await _audioChannel.invokeMethod<void>('play', {'path': path});
+        if (mounted) setState(() => _currentlyPlayingPath = path);
       }
     } on PlatformException catch (error) {
       if (!mounted) return;
@@ -489,6 +798,8 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
   String? _aiConseil;
   bool _enregistrement = false;
   bool _analyseEnCours = false;
+  bool _summarizeEnCours = false;
+  bool _soumissionEnCours = false;
 
   @override
   void dispose() {
@@ -611,13 +922,36 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
               ),
             ),
             const SizedBox(height: 16),
+
+            // Champ de description avec icône Reformuler / Résumer
             TextFormField(
               controller: _descriptionController,
               maxLines: 6,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Description détaillée (facultative si vocal)',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
                 alignLabelWithHint: true,
+                suffixIcon: Padding(
+                  padding: const EdgeInsets.only(bottom: 60),
+                  child: _summarizeEnCours
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : IconButton(
+                          tooltip: 'Reformuler / Résumer avec l’IA',
+                          icon: const Icon(
+                            Icons.auto_fix_high_rounded,
+                            color: AppColors.primaire,
+                            size: 26,
+                          ),
+                          onPressed: _summarizeDescription,
+                        ),
+                ),
               ),
               validator: (value) {
                 if ((value ?? '').trim().isEmpty && _audioPath == null) {
@@ -625,6 +959,19 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
                 }
                 return null;
               },
+            ),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _summarizeEnCours ? null : _summarizeDescription,
+                icon: const Icon(Icons.summarize_outlined, size: 18),
+                label: const Text('Résumer / Reformuler avec l’IA'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primaire,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
             ),
             const SizedBox(height: 12),
             Row(
@@ -634,7 +981,7 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
                     onPressed: _choisirImage,
                     icon: const Icon(Icons.image_outlined),
                     label: Text(
-                      _image == null ? 'Ajouter une image' : 'Image ajoutée',
+                      _image == null ? 'Ajouter une image' : 'Image ajoutée ✓',
                     ),
                   ),
                 ),
@@ -653,12 +1000,43 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
             if (_image != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: Text('Image : ${_image!.name}'),
+                child: Row(
+                  children: [
+                    const Icon(Icons.cloud_upload_outlined, size: 16, color: AppColors.primaire),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Image prête (upload Supabase Storage) : ${_image!.name}',
+                        style: const TextStyle(fontSize: 12, color: AppColors.texte2),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () => setState(() => _image = null),
+                    ),
+                  ],
+                ),
               ),
             if (_audioPath != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: Text('Vocal enregistré : $_audioPath'),
+                child: Row(
+                  children: [
+                    const Icon(Icons.mic, size: 16, color: AppColors.primaire),
+                    const SizedBox(width: 6),
+                    const Expanded(
+                      child: Text(
+                        'Vocal enregistré (upload Supabase Storage)',
+                        style: TextStyle(fontSize: 12, color: AppColors.texte2),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () => setState(() => _audioPath = null),
+                    ),
+                  ],
+                ),
               ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
@@ -689,9 +1067,22 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
             ],
             const SizedBox(height: 24),
             FilledButton.icon(
-              onPressed: _soumettre,
-              icon: const Icon(Icons.send_outlined),
-              label: const Text('Soumettre la réclamation'),
+              onPressed: _soumissionEnCours ? null : _soumettre,
+              icon: _soumissionEnCours
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.send_outlined),
+              label: Text(
+                _soumissionEnCours
+                    ? 'Envoi en cours (Supabase Storage)...'
+                    : 'Soumettre la réclamation',
+              ),
             ),
           ],
         ),
@@ -735,6 +1126,35 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
     }
   }
 
+  Future<void> _summarizeDescription() async {
+    final texte = _descriptionController.text.trim();
+    if (texte.isEmpty) {
+      _afficherErreur('Rédigez d’abord une description à reformuler.');
+      return;
+    }
+
+    setState(() => _summarizeEnCours = true);
+    try {
+      final reformule = await AiSummarizeService.instance.reformuler(texte);
+      if (reformule != null && reformule.isNotEmpty && mounted) {
+        _descriptionController.text = reformule;
+        _descriptionController.selection = TextSelection.fromPosition(
+          TextPosition(offset: reformule.length),
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✨ Description reformulée et résumée avec l’IA !'),
+            backgroundColor: AppColors.primaire,
+          ),
+        );
+      }
+    } catch (e) {
+      _afficherErreur('Erreur de reformulation : $e');
+    } finally {
+      if (mounted) setState(() => _summarizeEnCours = false);
+    }
+  }
+
   Future<void> _analyserAvecIa() async {
     if (_sujetController.text.trim().isEmpty ||
         _descriptionController.text.trim().isEmpty) {
@@ -772,14 +1192,25 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
       return;
     }
 
+    setState(() => _soumissionEnCours = true);
+
+    // 1. Upload de l'image sur Supabase Storage
     var imagePath = _image?.path;
     if (imagePath != null) {
-      try {
-        imagePath = await CloudinaryService.instance.uploadIfLocalPath(
-          imagePath,
-        );
-      } on CloudinaryUploadException {
-        // The local path is retained as an offline fallback.
+      final supabaseUrl =
+          await SupabaseStorageService.instance.uploadImage(imagePath);
+      if (supabaseUrl != null) {
+        imagePath = supabaseUrl;
+      }
+    }
+
+    // 2. Upload de l'audio sur Supabase Storage
+    var audioPath = _audioPath;
+    if (audioPath != null) {
+      final supabaseUrl =
+          await SupabaseStorageService.instance.uploadAudio(audioPath);
+      if (supabaseUrl != null) {
+        audioPath = supabaseUrl;
       }
     }
 
@@ -797,12 +1228,13 @@ class _AjouterReclamationPageState extends State<AjouterReclamationPage> {
           ? _autreCategorieController.text.trim()
           : null,
       imagePath: imagePath,
-      audioPath: _audioPath,
+      audioPath: audioPath,
       aiConseil: _aiConseil,
     );
 
     ReclamationService.instance.ajouter(nouvelleReclamation);
     if (mounted) {
+      setState(() => _soumissionEnCours = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Réclamation envoyée avec succès.')),
       );
