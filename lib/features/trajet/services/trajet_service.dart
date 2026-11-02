@@ -62,7 +62,7 @@ class TrajetService extends ChangeNotifier {
   Future<void> _charger() async {
     try {
       if (kIsWeb) {
-        _trajets = _donneesDemo();
+        _trajets = _donneesDemoNumerotees();
       } else {
         await _db.insertDemoData(_donneesDemo());
         _trajets = await _db.readAll();
@@ -70,7 +70,7 @@ class TrajetService extends ChangeNotifier {
       await _mettreAJourStatuts();
     } catch (e) {
       debugPrint('TrajetService : erreur de chargement SQLite : $e');
-      _trajets = _donneesDemo();
+      _trajets = _donneesDemoNumerotees();
     } finally {
       _charge = true;
       notifyListeners();
@@ -380,6 +380,15 @@ class TrajetService extends ChangeNotifier {
 // Insérées dans SQLite au premier lancement seulement (table vide).
 // id = 0 : SQLite attribue les identifiants.
 // ------------------------------------------------------------
+
+/// Données de démo gardées en mémoire, sans SQLite (web, ou base
+/// inaccessible) : on numérote nous-mêmes les trajets (1, 2, 3…),
+/// sinon parId() renverrait toujours le premier.
+List<Trajet> _donneesDemoNumerotees() {
+  final demo = _donneesDemo();
+  return [for (var i = 0; i < demo.length; i++) demo[i].copyWith(id: i + 1)];
+}
+
 List<Trajet> _donneesDemo() {
   final n = DateTime.now();
   DateTime j(int jours, int h, int m) =>

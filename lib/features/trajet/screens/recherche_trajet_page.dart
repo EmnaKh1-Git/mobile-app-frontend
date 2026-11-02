@@ -12,6 +12,7 @@ import '../../../models/lieu.dart';
 import '../services/trajet_service.dart';
 import '../utils/trajet_format.dart';
 import '../widgets/trajet_card.dart';
+import 'assistant_trajet_page.dart';
 import 'choix_itineraire_page.dart';
 import 'detail_trajet_page.dart';
 import 'resultats_trajet_page.dart';
@@ -118,12 +119,28 @@ class _RechercheTrajetPageState extends State<RechercheTrajetPage> {
     );
   }
 
+  void _ouvrirAssistant() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AssistantTrajetPage()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Rechercher un trajet')),
+      appBar: AppBar(
+        title: const Text('Rechercher un trajet'),
+        actions: [
+          IconButton(
+            tooltip: 'Assistant',
+            onPressed: _ouvrirAssistant,
+            icon: const Icon(Icons.auto_awesome_outlined),
+          ),
+        ],
+      ),
       body: ListenableBuilder(
         listenable: TrajetService.instance,
         builder: (context, _) {
@@ -230,6 +247,47 @@ class _RechercheTrajetPageState extends State<RechercheTrajetPage> {
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                ),
+              ),
+              // ---- Accès à l'assistant (chatbot) ----
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Material(
+                  color: cs.primaryContainer.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(16),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: _ouvrirAssistant,
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
+                        children: [
+                          const AvatarAssistant(rayon: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Besoin d’aide pour choisir ?',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 15)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Décrivez votre trajet : l’assistant vous '
+                                  'recommande le meilleur covoiturage.',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: cs.onSurfaceVariant),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.chevron_right, color: cs.primary),
+                        ],
+                      ),
                     ),
                   ),
                 ),
