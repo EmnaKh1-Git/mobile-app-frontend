@@ -19,7 +19,8 @@ import '../utils/trajet_format.dart';
 import '../widgets/trajet_card.dart';
 import 'resultats_trajet_page.dart';
 
-/// Crée l'alerte et affiche le résultat, avec un accès à « Mes alertes ».
+/// Crée l'alerte et affiche le résultat (message sans bouton : un
+/// message avec bouton resterait affiché jusqu'à ce qu'on le touche).
 /// Retourne null si l'alerte a été créée, sinon l'erreur.
 Future<String?> creerAlerteEtInformer(
   BuildContext context, {
@@ -31,7 +32,6 @@ Future<String?> creerAlerteEtInformer(
   int places = 1,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
-  final navigator = Navigator.of(context);
   final erreur = await NotificationService.instance.creerAlerte(
     depart: depart,
     arrivee: arrivee,
@@ -44,12 +44,8 @@ Future<String?> creerAlerteEtInformer(
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(
       content: Text(erreur ??
-          'Alerte créée : vous serez prévenu dans les notifications.'),
-      action: SnackBarAction(
-        label: 'Mes alertes',
-        onPressed: () => navigator
-            .push(MaterialPageRoute(builder: (_) => const AlertesPage())),
-      ),
+          'Alerte créée : vous serez prévenu dans les notifications '
+              '(Notifications › Alertes de recherche).'),
     ));
   return erreur;
 }
