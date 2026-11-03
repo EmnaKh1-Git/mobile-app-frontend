@@ -306,6 +306,10 @@ class DetailTrajetPage extends StatelessWidget {
               _Option('Animaux', Icons.pets, trajet.animaux),
               _Option('Réservation auto', Icons.flash_on,
                   trajet.reservationAuto),
+              if (trajet.entreFilles)
+                const _Option('Entre filles', Icons.woman, true),
+              if (trajet.estRegulier)
+                const _Option('Trajet régulier', Icons.repeat, true),
             ],
           ),
 

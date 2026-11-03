@@ -22,7 +22,10 @@ import '../services/discussion_service.dart';
 import '../services/trajet_service.dart';
 import '../utils/trajet_format.dart';
 import '../widgets/acces_discussion.dart';
+import '../widgets/bouton_notifications.dart';
 import '../widgets/evaluation_trajet.dart';
+import '../widgets/impact_trajets.dart';
+import '../widgets/options_trajet.dart';
 import '../widgets/trajet_card.dart';
 import 'detail_trajet_page.dart';
 import 'publier_trajet_page.dart';
@@ -85,6 +88,10 @@ class MesTrajetsPage extends StatelessWidget {
                     foregroundColor: Colors.white,
                     title: const Text('Mes trajets',
                         style: TextStyle(fontWeight: FontWeight.w700)),
+                    actions: const [
+                      BoutonNotifications(),
+                      SizedBox(width: 8),
+                    ],
                     // Le dégradé couvre tout l'en-tête ; le tableau de bord
                     // s'arrête au-dessus des onglets pour ne pas passer dessous
                     flexibleSpace: _FondDegrade(
@@ -798,6 +805,8 @@ class _OngletHistoriqueState extends State<_OngletHistorique> {
           : null,
       enfants: [
         _BilanHistorique(termines: termines.toList()),
+        const SizedBox(height: 12),
+        const CarteImpact(),
         const SizedBox(height: 14),
         Wrap(
           spacing: 8,
@@ -844,14 +853,11 @@ class _Filtre extends StatelessWidget {
       );
 }
 
-/// Bilan des trajets terminés : passagers, gains, CO₂ évité
+/// Bilan des trajets terminés : passagers, gains, note moyenne
+/// (le CO₂ évité et les badges sont dans CarteImpact)
 class _BilanHistorique extends StatelessWidget {
   final List<Trajet> termines;
   const _BilanHistorique({required this.termines});
-
-  /// Émissions moyennes d'une voiture (kg de CO₂ par km), évitées
-  /// pour chaque passager qui ne prend pas sa propre voiture
-  static const double _co2ParKm = 0.12;
 
   @override
   Widget build(BuildContext context) {
@@ -859,9 +865,6 @@ class _BilanHistorique extends StatelessWidget {
     final passagers = termines.fold<int>(0, (s, t) => s + t.placesReservees);
     final gains =
         termines.fold<double>(0, (s, t) => s + t.placesReservees * t.prixPlace);
-    final km = termines.fold<double>(0, (s, t) => s + t.distanceKm);
-    final co2 = termines.fold<double>(
-        0, (s, t) => s + t.distanceKm * t.placesReservees * _co2ParKm);
 
     Widget chiffre(String valeur, String libelle) => Expanded(
           child: Column(
@@ -903,30 +906,6 @@ class _BilanHistorique extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           const _LigneNoteMoyenne(),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: _vert.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.eco_outlined, size: 18, color: _vert),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '${km.round()} km parcourus · ≈ ${co2.round()} kg de CO₂ '
-                    'évités grâce au covoiturage',
-                    style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: _vert),
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -1205,6 +1184,10 @@ class _CarteMonTrajet extends StatelessWidget {
                                 : cs.primary,
                             gras: true,
                           ),
+                        if (t.entreFilles || t.estRegulier) ...[
+                          const SizedBox(height: 6),
+                          PastillesOptions(trajet: t, toutes: false),
+                        ],
                       ],
                     ),
                   ),
@@ -1531,6 +1514,13 @@ void _ouvrirActions(BuildContext context, Trajet t) {
   final service = TrajetService.instance;
   final messenger = ScaffoldMessenger.of(context);
   final cs = Theme.of(context).colorScheme;
+  // Trajet régulier : ce trajet et les suivants de la série
+  final suiteSerie = t.serieId == null
+      ? const <Trajet>[]
+      : service
+          .prochainsDeSerie(t.serieId!)
+          .where((x) => !x.dateDepart.isBefore(t.dateDepart))
+          .toList();
 
   showModalBottomSheet(
     context: context,
@@ -1624,6 +1614,17 @@ void _ouvrirActions(BuildContext context, Trajet t) {
                 _annulerAvecConfirmation(context, t);
               },
             ),
+            if (suiteSerie.length > 1)
+              _TuileAction(
+                icone: Icons.event_busy_outlined,
+                couleur: _rouge,
+                titre: 'Annuler la suite de la série',
+                sousTitre: 'Ce trajet et les ${suiteSerie.length - 1} suivants',
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  _annulerSerieAvecConfirmation(context, t, suiteSerie);
+                },
+              ),
             _TuileAction(
               icone: Icons.delete_outline,
               couleur: _rouge,
@@ -1671,6 +1672,40 @@ Future<void> _annulerAvecConfirmation(BuildContext context, Trajet t) async {
   await TrajetService.instance.annuler(t.id);
   messenger.showSnackBar(const SnackBar(
       content: Text('Trajet annulé, les passagers seront prévenus')));
+}
+
+Future<void> _annulerSerieAvecConfirmation(
+    BuildContext context, Trajet t, List<Trajet> suite) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final passagers = suite.fold<int>(0, (s, x) => s + x.placesReservees);
+  final confirme = await showDialog<bool>(
+    context: context,
+    builder: (dctx) => AlertDialog(
+      icon: const Icon(Icons.event_busy_outlined, color: _rouge),
+      title: Text('Annuler ${suite.length} trajets ?'),
+      content: Text(
+        '${t.villeDepart} → ${t.villeArrivee}, à ${tHeure(t.dateDepart)}\n'
+        'Du ${tJourSemaine(suite.first.dateDepart)} ${tDateCourte(suite.first.dateDepart)} '
+        'au ${tJourSemaine(suite.last.dateDepart)} ${tDateCourte(suite.last.dateDepart)}.\n\n'
+        '${passagers == 0 ? 'Aucun passager n’a encore réservé.' : '$passagers place(s) réservée(s) : les passagers seront prévenus.'}',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dctx, false),
+          child: const Text('Retour'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: _rouge),
+          onPressed: () => Navigator.pop(dctx, true),
+          child: const Text('Tout annuler'),
+        ),
+      ],
+    ),
+  );
+  if (confirme != true) return;
+  final n = await TrajetService.instance.annulerSerie(t);
+  messenger.showSnackBar(
+      SnackBar(content: Text('$n trajet(s) de la série annulé(s)')));
 }
 
 class _TuileAction extends StatelessWidget {

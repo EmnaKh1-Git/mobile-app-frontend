@@ -139,10 +139,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Votre note  '), findsOneWidget);
 
-    // Historique : note moyenne reçue et passagers à noter
+    // Historique : note moyenne reçue, impact et passagers à noter
     await tester.tap(onglet('Historique'));
     await tester.pumpAndSettle();
     expect(find.textContaining('4.5/5 · 2 avis'), findsOneWidget);
+    expect(find.text('Votre impact'), findsOneWidget);
+    // Badges : premier trajet, éco-citoyen et conducteur 5★ obtenus
+    expect(find.text('Badges · 3/5'), findsOneWidget);
+    await tester.scrollUntilVisible(find.textContaining('Noter ('), 200,
+        scrollable: find
+            .descendant(
+                of: find.byKey(const PageStorageKey('historique')),
+                matching: find.byType(Scrollable))
+            .first);
     expect(find.textContaining('Noter ('), findsOneWidget);
   });
 }

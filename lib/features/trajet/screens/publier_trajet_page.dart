@@ -11,6 +11,8 @@
 //  par recherche d'adresse ou sur la carte ; la route est tracée et la
 //  distance / la durée sont calculées automatiquement.
 //  Étape 2 : prix par place avec − / + et prix recommandé (TarifService).
+//  Trajet régulier (publication seulement) : le même trajet est publié
+//  les jours choisis pendant 1 à 8 semaines (une série de trajets).
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -59,11 +61,23 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
   /// false : le prix suit le prix recommandé ; true : choisi à la main
   bool _prixModifie = false;
 
+  // Étape 2 : trajet régulier
+  bool _regulier = false;
+  final Set<int> _jours = {
+    DateTime.monday,
+    DateTime.tuesday,
+    DateTime.wednesday,
+    DateTime.thursday,
+    DateTime.friday,
+  };
+  int _semaines = 4;
+
   // Étape 3 : options
   bool _bagages = true;
   bool _fumeur = false;
   bool _animaux = false;
   bool _reservationAuto = false;
+  bool _entreFilles = false;
   final _description = TextEditingController();
 
   @override
@@ -82,6 +96,7 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
       _fumeur = t.fumeur;
       _animaux = t.animaux;
       _reservationAuto = t.reservationAuto;
+      _entreFilles = t.entreFilles;
       _description.text = t.description;
       _calculEnCours = true;
       _chargerItineraireExistant(t);
@@ -101,6 +116,11 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
   }
 
   double get _km => _itineraire?.distanceKm ?? 0;
+
+  /// Trajet régulier : dates de tous les départs (null sans date)
+  List<DateTime>? get _datesSerie => _regulier && _dateHeure != null
+      ? datesSerie(_dateHeure!, _jours, _semaines)
+      : null;
 
   EstimationPrix get _estimation => TarifService.estimer(
         distanceKm: _km,
@@ -213,6 +233,9 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
     if (etape == 1 && _dateHeure == null) {
       return 'Veuillez choisir la date et l’heure de départ.';
     }
+    if (etape == 1 && _datesSerie != null && _datesSerie!.isEmpty) {
+      return 'Trajet régulier : choisissez au moins un jour de la semaine.';
+    }
     return null;
   }
 
@@ -281,12 +304,30 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
       fumeur: _fumeur,
       animaux: _animaux,
       reservationAuto: _reservationAuto,
+      entreFilles: _entreFilles,
+      serieId: original?.serieId,
       description: _description.text.trim(),
     );
 
     // Les règles de gestion sont vérifiées dans le service,
     // puis le trajet est enregistré dans SQLite
     setState(() => _enCours = true);
+    final dates = _datesSerie;
+    if (!_modeModification && dates != null) {
+      final res = await service.publierSerie(trajet, dates);
+      if (!mounted) return;
+      setState(() => _enCours = false);
+      if (res.publies == 0) {
+        _erreur(res.refus.isEmpty ? 'Aucun trajet publié.' : res.refus.first);
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${res.publies} trajet(s) régulier(s) publié(s)'
+            '${res.refus.isEmpty ? '' : '. ${res.refus.length} date(s) ignorée(s) — ${res.refus.first}'}'),
+      ));
+      Navigator.pop(context, true);
+      return;
+    }
     final erreur = _modeModification
         ? await service.modifier(trajet) // UPDATE
         : await service.publier(trajet); // INSERT
@@ -353,7 +394,9 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
                         ? 'Enregistrement…'
                         : (_modeModification
                             ? 'Enregistrer les modifications'
-                            : 'Publier le trajet'))),
+                            : (_datesSerie != null
+                                ? 'Publier les ${_datesSerie!.length} trajets'
+                                : 'Publier le trajet')))),
               ),
               const SizedBox(width: 12),
               if (_etape > 0)
@@ -436,6 +479,19 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
                     ),
                   ],
                 ),
+                if (!_modeModification) ...[
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    value: _regulier,
+                    onChanged: (v) => setState(() => _regulier = v),
+                    title: const Text('Trajet régulier'),
+                    subtitle:
+                        const Text('Le même trajet sur plusieurs jours'),
+                    secondary: const Icon(Icons.repeat),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  if (_regulier) _choixRegularite(cs),
+                ],
                 const SizedBox(height: 20),
                 Text('Durée estimée : ${tDuree(_duree)}',
                     style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -521,6 +577,14 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
                   contentPadding: EdgeInsets.zero,
                 ),
                 SwitchListTile(
+                  value: _entreFilles,
+                  onChanged: (v) => setState(() => _entreFilles = v),
+                  title: const Text('Entre filles'),
+                  subtitle: const Text('Trajet réservé aux passagères'),
+                  secondary: const Icon(Icons.woman),
+                  contentPadding: EdgeInsets.zero,
+                ),
+                SwitchListTile(
                   value: _reservationAuto,
                   onChanged: (v) => setState(() => _reservationAuto = v),
                   title: const Text('Réservation automatique'),
@@ -564,6 +628,8 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
                             _dateHeure == null
                                 ? 'Non définie'
                                 : '${tDateCourte(_dateHeure!)} à ${tHeure(_dateHeure!)}'),
+                        if (_datesSerie != null)
+                          _ligne('Régulier', _resumeSerie(_datesSerie!)),
                         _ligne('Places', '$_places'),
                         _ligne('Prix',
                             _prix <= 0 ? 'Gratuit' : '${tPrix(_prix)} / place'),
@@ -719,6 +785,78 @@ class _PublierTrajetPageState extends State<PublierTrajetPage> {
             ),
           ),
       ],
+    );
+  }
+
+  static const List<String> _joursCourts = [
+    'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'
+  ];
+
+  /// « 20 trajets, du lun. 9 nov. au ven. 4 déc. »
+  String _resumeSerie(List<DateTime> dates) => dates.isEmpty
+      ? 'Aucun jour choisi'
+      : '${dates.length} trajet(s), du ${tJourSemaine(dates.first)} '
+          '${tDateCourte(dates.first)} au ${tJourSemaine(dates.last)} '
+          '${tDateCourte(dates.last)}';
+
+  /// Trajet régulier : jours de la semaine et durée de la série
+  Widget _choixRegularite(ColorScheme cs) {
+    final dates = _datesSerie;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cs.primaryContainer.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Jours de départ',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (var j = DateTime.monday; j <= DateTime.sunday; j++)
+                FilterChip(
+                  label: Text(_joursCourts[j - 1]),
+                  selected: _jours.contains(j),
+                  showCheckmark: false,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (choisi) => setState(
+                      () => choisi ? _jours.add(j) : _jours.remove(j)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text('Pendant', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final s in const [1, 2, 4, 8])
+                ChoiceChip(
+                  label: Text('$s semaine${s > 1 ? 's' : ''}'),
+                  selected: _semaines == s,
+                  showCheckmark: false,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (_) => setState(() => _semaines = s),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            dates == null
+                ? 'Choisissez la date et l’heure du premier départ.'
+                : '${_resumeSerie(dates)}, à ${tHeure(_dateHeure!)}. '
+                    'Chaque trajet reste modifiable séparément.',
+            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+          ),
+        ],
+      ),
     );
   }
 

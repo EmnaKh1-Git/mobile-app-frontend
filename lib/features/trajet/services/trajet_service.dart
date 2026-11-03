@@ -7,16 +7,21 @@
 //  (et la page d'accueil) puissent lire la liste sans attendre ;
 //  chaque modification est d'abord écrite dans SQLite, puis la
 //  copie en mémoire est mise à jour et les écrans sont prévenus.
+//  La série (trajet régulier) et l'option « Entre filles » sont
+//  enregistrées à part, dans complements.db.
 // ============================================================
 
 import 'package:flutter/foundation.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/services/complements_database.dart';
 import '../../../core/services/trajet_database.dart';
 import '../../../core/utils/geo.dart';
 import '../../../models/lieu.dart';
 import '../../../models/trajet.dart';
+import '../utils/trajet_format.dart';
 import 'discussion_service.dart';
+import 'notification_service.dart';
 
 /// Véhicule de l'utilisateur connecté (sera fourni par le module Utilisateur)
 const String monVehicule = 'Peugeot 208 – Grise';
@@ -66,7 +71,7 @@ class TrajetService extends ChangeNotifier {
         _trajets = _donneesDemoNumerotees();
       } else {
         await _db.insertDemoData(_donneesDemo());
-        _trajets = await _db.readAll();
+        _trajets = await _avecOptions(await _db.readAll());
       }
       await _mettreAJourStatuts();
     } catch (e) {
@@ -76,7 +81,52 @@ class TrajetService extends ChangeNotifier {
       // Passagers et discussions des trajets (base « discussions.db »)
       await DiscussionService.instance.charger(_trajets);
       _charge = true;
+      // Notifications et alertes (base « complements.db »)
+      await NotificationService.instance.charger();
       notifyListeners();
+    }
+  }
+
+  /// Ajoute aux trajets lus dans SQLite leur série et l'option
+  /// « Entre filles » (complements.db)
+  Future<List<Trajet>> _avecOptions(List<Trajet> trajets) async {
+    final base = ComplementsDatabase.instance;
+    try {
+      var options = await base.lireOptions();
+      if (options.isEmpty) {
+        // Premier lancement : options des trajets de démonstration
+        for (final d in _donneesDemo().where((d) => d.entreFilles)) {
+          for (final t in trajets) {
+            if (t.conducteurId == d.conducteurId &&
+                t.villeDepart == d.villeDepart &&
+                t.villeArrivee == d.villeArrivee) {
+              await base.enregistrerOptions(t.id, null, true);
+            }
+          }
+        }
+        options = await base.lireOptions();
+      }
+      return [
+        for (final t in trajets)
+          if (options[t.id] case final o?)
+            t.copyWith(serieId: o.serieId, entreFilles: o.entreFilles)
+          else
+            t,
+      ];
+    } catch (e) {
+      debugPrint('TrajetService : options des trajets illisibles : $e');
+      return trajets;
+    }
+  }
+
+  /// Enregistre la série et l'option « Entre filles » du trajet
+  Future<void> _enregistrerOptions(Trajet t) async {
+    if (kIsWeb) return;
+    try {
+      await ComplementsDatabase.instance
+          .enregistrerOptions(t.id, t.serieId, t.entreFilles);
+    } catch (e) {
+      debugPrint('TrajetService : erreur d’enregistrement des options : $e');
     }
   }
 
@@ -120,6 +170,10 @@ class TrajetService extends ChangeNotifier {
     DateTime? date,
     int placesMin = 1,
     double? prixMax,
+    bool nonFumeur = false,
+    bool bagages = false,
+    bool animaux = false,
+    bool entreFilles = false,
     String tri = 'heure',
   }) {
     final d = depart.trim().toLowerCase();
@@ -143,6 +197,11 @@ class TrajetService extends ChangeNotifier {
       }
       if (t.placesDispo < placesMin) return false;
       if (prixMax != null && t.prixPlace > prixMax) return false;
+      // Préférences du passager
+      if (nonFumeur && t.fumeur) return false;
+      if (bagages && !t.bagages) return false;
+      if (animaux && !t.animaux) return false;
+      if (entreFilles && !t.entreFilles) return false;
       return true;
     }).toList();
 
@@ -184,25 +243,64 @@ class TrajetService extends ChangeNotifier {
         a.dateDepart.difference(t.dateDepart).inMinutes.abs() < 60);
     if (conflit) return 'Vous avez déjà un trajet prévu à cette heure-là.';
 
+    int prochainId() => _trajets.isEmpty
+        ? 1
+        : _trajets.map((x) => x.id).reduce((a, b) => a > b ? a : b) + 1;
+    Trajet enregistre;
     try {
-      Trajet enregistre;
-      if (kIsWeb) {
-        final newId = _trajets.isEmpty ? 1 : (_trajets.map((x) => x.id).reduce((a, b) => a > b ? a : b) + 1);
-        enregistre = t.copyWith(id: newId, statut: StatutTrajet.publie);
-        _trajets.add(enregistre);
-      } else {
-        enregistre = await _db.create(t.copyWith(statut: StatutTrajet.publie));
-        _trajets.add(enregistre);
-      }
-      notifyListeners();
-      return null;
+      enregistre = kIsWeb
+          ? t.copyWith(id: prochainId(), statut: StatutTrajet.publie)
+          : await _db.create(t.copyWith(statut: StatutTrajet.publie));
     } catch (e) {
-      final newId = _trajets.isEmpty ? 1 : (_trajets.map((x) => x.id).reduce((a, b) => a > b ? a : b) + 1);
-      final enregistre = t.copyWith(id: newId, statut: StatutTrajet.publie);
-      _trajets.add(enregistre);
-      notifyListeners();
-      return null;
+      enregistre = t.copyWith(id: prochainId(), statut: StatutTrajet.publie);
     }
+    _trajets.add(enregistre);
+    await _enregistrerOptions(enregistre);
+    notifyListeners();
+    return null;
+  }
+
+  /// Publie un trajet régulier : un trajet par date, tous dans la même
+  /// série (chacun reste modifiable ou annulable séparément). Les dates
+  /// refusées par les règles (conflit d'horaire…) sont ignorées et
+  /// expliquées dans [refus].
+  Future<({int publies, List<String> refus})> publierSerie(
+      Trajet modele, List<DateTime> dates) async {
+    final serie = 'serie-${DateTime.now().microsecondsSinceEpoch}';
+    var publies = 0;
+    final refus = <String>[];
+    for (final d in dates) {
+      final erreur =
+          await publier(modele.copyWith(id: 0, dateDepart: d, serieId: serie));
+      if (erreur == null) {
+        publies++;
+      } else {
+        refus.add('${tJourSemaine(d)} ${tDateCourte(d)} : $erreur');
+      }
+    }
+    return (publies: publies, refus: refus);
+  }
+
+  /// Trajets encore à venir d'une série, du plus proche au plus lointain
+  List<Trajet> prochainsDeSerie(String serieId) => _trajets
+      .where((t) =>
+          t.serieId == serieId &&
+          (t.statut == StatutTrajet.publie || t.statut == StatutTrajet.complet))
+      .toList()
+    ..sort((a, b) => a.dateDepart.compareTo(b.dateDepart));
+
+  /// Annule [t] et les trajets suivants de sa série (les passagers sont
+  /// prévenus). Retourne le nombre de trajets annulés.
+  Future<int> annulerSerie(Trajet t) async {
+    final serie = t.serieId;
+    if (serie == null) return 0;
+    final cibles = prochainsDeSerie(serie)
+        .where((x) => !x.dateDepart.isBefore(t.dateDepart))
+        .toList();
+    for (final x in cibles) {
+      await annuler(x.id);
+    }
+    return cibles.length;
   }
 
   // ---------- Modifier ----------
@@ -252,10 +350,12 @@ class TrajetService extends ChangeNotifier {
     // Les places libres sont recalculées à partir des réservations existantes
     final dispo = t.placesTotales - reservees;
     try {
-      await _enregistrer(t.copyWith(
+      final maj = t.copyWith(
         placesDispo: dispo,
         statut: dispo == 0 ? StatutTrajet.complet : StatutTrajet.publie,
-      ));
+      );
+      await _enregistrer(maj);
+      await _enregistrerOptions(maj);
       return null;
     } catch (e) {
       return 'Erreur d’enregistrement : $e';
@@ -281,6 +381,7 @@ class TrajetService extends ChangeNotifier {
       dateDepart: date,
       placesDispo: t.placesTotales,
       statut: StatutTrajet.publie,
+      sansSerie: true,
     ));
   }
 
@@ -337,6 +438,7 @@ class TrajetService extends ChangeNotifier {
 
     final reservation = discussions.reservationDe(trajetId, passagerId)!;
     await discussions.annoncerAnnulation(t, reservation.nom);
+    await NotificationService.instance.signalerAnnulation(t, reservation);
     await libererPlaces(trajetId, reservation.places, passagerId: passagerId);
     return null;
   }
@@ -369,8 +471,10 @@ class TrajetService extends ChangeNotifier {
     }
     _trajets.removeWhere((x) => x.id == id);
     notifyListeners();
-    // Les passagers et la discussion sont dans une autre base
+    // Les passagers, la discussion, les notifications et les options
+    // sont dans d'autres bases
     await DiscussionService.instance.supprimerTrajet(id);
+    await NotificationService.instance.supprimerTrajet(id);
     return null;
   }
 
@@ -413,6 +517,17 @@ class TrajetService extends ChangeNotifier {
     }
   }
 }
+
+/// Dates d'un trajet régulier : à partir de [premier] (inclus, même
+/// heure), chaque jour de la semaine choisi dans [jours]
+/// ([DateTime.monday] … [DateTime.sunday]), pendant [semaines] semaines
+List<DateTime> datesSerie(DateTime premier, Set<int> jours, int semaines) => [
+      for (var i = 0; i < semaines * 7; i++)
+        if (jours.contains(
+            DateTime(premier.year, premier.month, premier.day + i).weekday))
+          DateTime(premier.year, premier.month, premier.day + i, premier.hour,
+              premier.minute),
+    ];
 
 // ------------------------------------------------------------
 // DONNÉES DE DÉMONSTRATION
@@ -522,6 +637,7 @@ List<Trajet> _donneesDemo() {
       prixPlace: 30,
       animaux: true,
       reservationAuto: true,
+      entreFilles: true,
       description: 'Trajet direct par l’autoroute A1.',
     ),
     Trajet(
@@ -562,6 +678,7 @@ List<Trajet> _donneesDemo() {
       placesTotales: 4,
       placesDispo: 3,
       prixPlace: 5,
+      entreFilles: true,
       description: 'Navette universitaire Sousse - Monastir.',
     ),
     Trajet(

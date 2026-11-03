@@ -13,6 +13,7 @@ import '../features/trajet/screens/recherche_trajet_page.dart';
 import '../features/trajet/screens/publier_trajet_page.dart';
 import '../features/trajet/screens/mes_trajets_page.dart';
 import '../features/trajet/screens/detail_trajet_page.dart';
+import '../features/trajet/widgets/bouton_notifications.dart';
 import '../features/trajet/widgets/trajet_card.dart';
 import '../features/planning/screens/planning_home.dart';
 
@@ -106,18 +107,8 @@ class AccueilPage extends StatelessWidget {
                       ),
                     ),
 
-                    IconButton.outlined(
-                      onPressed: () {},
-                      icon: const Badge(
-                        smallSize: 9,
-                        backgroundColor:
-                        AppColors.accent,
-                        child: Icon(
-                          Icons.notifications_none,
-                        ),
-                      ),
-                      tooltip: 'Notifications',
-                    ),
+                    // Centre de notifications (module Trajets)
+                    const BoutonNotifications(contour: true),
                   ],
                 ),
 

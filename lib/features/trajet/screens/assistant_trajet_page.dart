@@ -12,6 +12,7 @@ import '../../../core/constants/app_constants.dart';
 import '../services/assistant_trajet.dart';
 import '../services/trajet_service.dart';
 import '../utils/trajet_format.dart';
+import 'alertes_page.dart';
 import 'detail_trajet_page.dart';
 import 'resultats_trajet_page.dart';
 
@@ -104,7 +105,7 @@ class _AssistantTrajetPageState extends State<AssistantTrajetPage> {
     });
   }
 
-  void _toucherSuggestion(SuggestionAssistant s) {
+  Future<void> _toucherSuggestion(SuggestionAssistant s) async {
     final c = _assistant.criteres;
     switch (s.action) {
       case ActionAssistant.envoyer:
@@ -124,13 +125,21 @@ class _AssistantTrajetPageState extends State<AssistantTrajetPage> {
         );
         break;
       case ActionAssistant.creerAlerte:
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Alerte créée : ${c.itineraire}')),
+        final erreur = await creerAlerteEtInformer(
+          context,
+          depart: c.depart ?? '',
+          arrivee: c.arrivee ?? '',
+          jour: c.date,
+          heure: c.heure,
+          moment: c.moment,
+          places: c.places,
         );
+        if (!mounted) return;
         setState(() => _messages.add(MessageAssistant(
               deUtilisateur: false,
-              texte: 'C’est fait : je vous préviendrai dès qu’un trajet '
-                  '${c.itineraire} sera publié.',
+              texte: erreur ??
+                  'C’est fait : je vous préviendrai dans les notifications '
+                      'dès qu’un trajet ${c.itineraire} sera publié.',
               suggestions: const [SuggestionAssistant('Nouvelle recherche')],
             )));
         _defiler(versDebutDuDernier: true);

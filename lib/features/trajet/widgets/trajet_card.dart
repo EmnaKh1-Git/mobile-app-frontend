@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '../../../models/trajet.dart';
 import '../services/trajet_service.dart';
 import '../utils/trajet_format.dart';
+import 'options_trajet.dart';
 
 class TrajetCard extends StatelessWidget {
   final Trajet trajet;
@@ -137,6 +138,8 @@ class TrajetCard extends StatelessWidget {
                     ),
                 ],
               ),
+              const SizedBox(height: 10),
+              PastillesOptions(trajet: trajet),
             ],
           ),
         ),
@@ -246,11 +249,15 @@ class EtatVideTrajet extends StatelessWidget {
   final String titre;
   final String message;
 
+  /// Bouton affiché sous le message (facultatif)
+  final Widget? action;
+
   const EtatVideTrajet({
     super.key,
     required this.icone,
     required this.titre,
     required this.message,
+    this.action,
   });
 
   @override
@@ -269,6 +276,10 @@ class EtatVideTrajet extends StatelessWidget {
             Text(message,
                 textAlign: TextAlign.center,
                 style: TextStyle(color: cs.onSurfaceVariant)),
+            if (action != null) ...[
+              const SizedBox(height: 20),
+              action!,
+            ],
           ],
         ),
       ),

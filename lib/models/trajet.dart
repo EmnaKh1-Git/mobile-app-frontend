@@ -15,6 +15,9 @@
 //  (latDepart, lngDepart, latArrivee, lngArrivee) et le tracé de la
 //  route (itineraire, polyline encodée) sont facultatifs : les anciens
 //  trajets sans coordonnées restent valides.
+//
+//  serieId (trajet régulier) et entreFilles ne sont pas dans la table
+//  « trajets » : TrajetService les enregistre dans complements.db.
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -135,6 +138,13 @@ class Trajet {
   /// Vide si inconnu : la page détail le recalcule.
   final String itineraire;
 
+  // ---- Enregistrés à part (complements.db) ----
+  /// Trajet régulier : tous les trajets publiés ensemble ont la même série
+  final String? serieId;
+
+  /// Trajet réservé aux passagères
+  final bool entreFilles;
+
   Trajet({
     required this.id,
     required this.conducteurId,
@@ -165,6 +175,8 @@ class Trajet {
     this.latArrivee,
     this.lngArrivee,
     this.itineraire = '',
+    this.serieId,
+    this.entreFilles = false,
   })  : placesDispo = placesDispo ?? placesTotales,
         etapes = etapes ?? const <Etape>[],
         dateCreation = dateCreation ?? DateTime.now();
@@ -184,6 +196,8 @@ class Trajet {
       lngDepart != null &&
       latArrivee != null &&
       lngArrivee != null;
+
+  bool get estRegulier => serieId != null;
 
   // ---- RÈGLES DE GESTION (vérifiées avant publication) ----
   /// Retourne null si le trajet est valide, sinon le message d'erreur.
@@ -216,12 +230,16 @@ class Trajet {
   }
 
   /// Copie du trajet en changeant certains champs
-  /// (utilisé après l'insertion SQLite pour récupérer l'id, et pour « Dupliquer »)
+  /// (utilisé après l'insertion SQLite pour récupérer l'id, et pour « Dupliquer »).
+  /// Avec `sansSerie: true`, la copie ne fait plus partie de la série.
   Trajet copyWith({
     int? id,
     DateTime? dateDepart,
     int? placesDispo,
     StatutTrajet? statut,
+    String? serieId,
+    bool sansSerie = false,
+    bool? entreFilles,
   }) =>
       Trajet(
         id: id ?? this.id,
@@ -253,6 +271,8 @@ class Trajet {
         latArrivee: latArrivee,
         lngArrivee: lngArrivee,
         itineraire: itineraire,
+        serieId: sansSerie ? null : (serieId ?? this.serieId),
+        entreFilles: entreFilles ?? this.entreFilles,
       );
 
   // ------------------------------------------------------------
