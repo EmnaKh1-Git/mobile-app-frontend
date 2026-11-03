@@ -30,10 +30,22 @@ class CovoiturageApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Covoiturage Étudiant',
-      // Couleurs de l'application à partir du bleu de la charte (app/theme.dart)
+      // Couleurs de l'application à partir du bleu de la charte (app/theme.dart).
+      // Par défaut, Material 3 ternit ce bleu en bleu violacé (#4F5B92) :
+      // on garde le bleu de la charte pour les rôles principaux.
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: AppColors.primaire),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: AppColors.primaire,
+          dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
+        ).copyWith(
+          primary: AppColors.primaire,
+          surfaceTint: AppColors.primaire,
+          primaryContainer: AppColors.primaireDoux,
+          onPrimaryContainer: AppColors.primaireFonce,
+          secondaryContainer: const Color(0xFFD7DFFB),
+          onSecondaryContainer: AppColors.primaireFonce,
+        ),
       ),
       home: const AccueilPage(),
     );

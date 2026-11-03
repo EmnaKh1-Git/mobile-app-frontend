@@ -15,6 +15,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../../../app/theme.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../models/trajet.dart';
 import '../services/discussion_service.dart';
@@ -151,10 +152,7 @@ class _FondDegrade extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            cs.primary,
-            Color.lerp(cs.primary, const Color(0xFF1B1464), 0.45)!,
-          ],
+          colors: [cs.primary, AppColors.primaireFonce],
         ),
       ),
       child: Stack(
