@@ -6,19 +6,26 @@
 //  prévus et compte à rebours jusqu'au prochain départ.
 //  À venir : trajets groupés (En cours, Aujourd'hui, Demain…) avec
 //  l'action utile du moment (Démarrer, Terminer, Modifier).
+//  Réservés : trajets où l'utilisateur est passager.
 //  Historique : bilan (gains, passagers, CO₂ évité), filtre par
 //  statut et regroupement par mois.
+//  Chaque carte donne accès à la discussion du trajet (ouverte 2 h
+//  avant le départ), avec le nombre de messages non lus.
 // ============================================================
 
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../models/trajet.dart';
+import '../services/discussion_service.dart';
 import '../services/trajet_service.dart';
 import '../utils/trajet_format.dart';
+import '../widgets/acces_discussion.dart';
+import '../widgets/evaluation_trajet.dart';
 import '../widgets/trajet_card.dart';
 import 'detail_trajet_page.dart';
 import 'publier_trajet_page.dart';
+import 'recherche_trajet_page.dart';
 
 const Color _rouge = Color(0xFFA3281A);
 const Color _vert = Color(0xFF1B7F55);
@@ -34,7 +41,7 @@ class MesTrajetsPage extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         backgroundColor: cs.surfaceContainerLow,
         floatingActionButton: FloatingActionButton.extended(
@@ -44,11 +51,26 @@ class MesTrajetsPage extends StatelessWidget {
         ),
         // Les onglets se redessinent dès que le service change
         body: ListenableBuilder(
-          listenable: TrajetService.instance,
+          listenable: Listenable.merge(
+              [TrajetService.instance, DiscussionService.instance]),
           builder: (context, _) {
             final service = TrajetService.instance;
             final aVenir = service.mesTrajets(monId, aVenir: true);
             final historique = service.historique(monId);
+            // Trajets d'autres conducteurs où j'ai réservé : encore actifs,
+            // puis terminés (à noter), du plus récent au plus ancien
+            final mesReservations = [
+              for (final id in DiscussionService.instance.trajetsReserves(monId))
+                ?service.parId(id),
+            ];
+            final reserves = mesReservations
+                .where((t) => t.statut.estActif)
+                .toList()
+              ..sort((a, b) => a.dateDepart.compareTo(b.dateDepart));
+            final reservesTermines = mesReservations
+                .where((t) => t.statut == StatutTrajet.termine)
+                .toList()
+              ..sort((a, b) => b.dateDepart.compareTo(a.dateDepart));
 
             return NestedScrollView(
               headerSliverBuilder: (context, _) => [
@@ -77,6 +99,7 @@ class MesTrajetsPage extends StatelessWidget {
                       preferredSize: const Size.fromHeight(_hauteurOnglets),
                       child: _Onglets(
                         nbAVenir: aVenir.length,
+                        nbReserves: reserves.length,
                         nbHistorique: historique.length,
                       ),
                     ),
@@ -86,6 +109,11 @@ class MesTrajetsPage extends StatelessWidget {
               body: TabBarView(
                 children: [
                   _OngletAVenir(trajets: aVenir, charge: service.estCharge),
+                  _OngletReserves(
+                    trajets: reserves,
+                    termines: reservesTermines,
+                    charge: service.estCharge,
+                  ),
                   _OngletHistorique(
                       trajets: historique, charge: service.estCharge),
                 ],
@@ -153,7 +181,8 @@ class _TableauDeBord extends StatelessWidget {
         aVenir.fold<double>(0, (s, t) => s + t.placesReservees * t.prixPlace);
     final prochain = aVenir.isEmpty ? null : aVenir.first;
 
-    // Placé sur toute la hauteur de l'en-tête déplié (onglets compris)
+    // Placé sur toute la hauteur de l'en-tête déplié (onglets compris).
+    // Avec une grande taille de texte, le contenu rétrécit au lieu de déborder.
     return Padding(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -161,9 +190,23 @@ class _TableauDeBord extends StatelessWidget {
         16,
         _hauteurOnglets + 10,
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
+      child: LayoutBuilder(
+        builder: (context, contraintes) => FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.bottomCenter,
+          child: SizedBox(
+            width: contraintes.maxWidth,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: _contenu(passagers, gains, prochain),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _contenu(int passagers, double gains, Trajet? prochain) => [
           Row(
             children: [
               _TuileStat(
@@ -187,10 +230,7 @@ class _TableauDeBord extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           _BandeauProchain(trajet: prochain),
-        ],
-      ),
-    );
-  }
+        ];
 }
 
 class _Cercle extends StatelessWidget {
@@ -330,8 +370,13 @@ class _BandeauProchain extends StatelessWidget {
 
 class _Onglets extends StatelessWidget {
   final int nbAVenir;
+  final int nbReserves;
   final int nbHistorique;
-  const _Onglets({required this.nbAVenir, required this.nbHistorique});
+  const _Onglets({
+    required this.nbAVenir,
+    required this.nbReserves,
+    required this.nbHistorique,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -354,11 +399,13 @@ class _Onglets extends StatelessWidget {
         ),
         labelColor: cs.primary,
         unselectedLabelColor: Colors.white,
-        labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+        labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+        labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
         unselectedLabelStyle:
-            const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
         tabs: [
           Tab(height: 40, child: _LibelleOnglet('À venir', nbAVenir)),
+          Tab(height: 40, child: _LibelleOnglet('Réservés', nbReserves)),
           Tab(height: 40, child: _LibelleOnglet('Historique', nbHistorique)),
         ],
       ),
@@ -375,22 +422,26 @@ class _LibelleOnglet extends StatelessWidget {
   Widget build(BuildContext context) {
     // Couleur fournie par la TabBar (sélectionné / non sélectionné)
     final couleur = DefaultTextStyle.of(context).style.color ?? Colors.white;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(texte),
-        const SizedBox(width: 6),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-          decoration: BoxDecoration(
-            color: couleur.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(10),
+    // Trois onglets sur un petit écran : le libellé rétrécit si besoin
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(texte),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+            decoration: BoxDecoration(
+              color: couleur.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text('$nombre',
+                style: TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w800, color: couleur)),
           ),
-          child: Text('$nombre',
-              style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w800, color: couleur)),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -452,6 +503,255 @@ class _OngletAVenir extends StatelessWidget {
             _TitreSection(titre: s, nombre: groupes[s]!.length),
             for (final t in groupes[s]!) _CarteMonTrajet(trajet: t),
           ],
+      ],
+    );
+  }
+}
+
+// ------------------------------------------------------------
+// ONGLET « RÉSERVÉS » (l'utilisateur est passager)
+// ------------------------------------------------------------
+
+class _OngletReserves extends StatelessWidget {
+  final List<Trajet> trajets;
+
+  /// Trajets réservés terminés : on peut y noter le conducteur
+  final List<Trajet> termines;
+  final bool charge;
+  const _OngletReserves({
+    required this.trajets,
+    required this.termines,
+    required this.charge,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _ListeOnglet(
+      cle: 'reserves',
+      charge: charge,
+      vide: trajets.isEmpty && termines.isEmpty
+          ? _EtatVide(
+              icone: Icons.confirmation_number_outlined,
+              titre: 'Aucune réservation',
+              message: 'Les trajets que vous réservez comme\n'
+                  'passager apparaîtront ici.',
+              action: 'Rechercher un trajet',
+              iconeAction: Icons.search,
+              onAction: () => _ouvrir(context, const RechercheTrajetPage()),
+            )
+          : null,
+      enfants: [
+        if (trajets.isNotEmpty) ...[
+          _TitreSection(titre: 'À venir', nombre: trajets.length),
+          for (final t in trajets) _CarteReservation(trajet: t),
+        ],
+        if (termines.isNotEmpty) ...[
+          _TitreSection(titre: 'Terminés', nombre: termines.length),
+          for (final t in termines) _CarteReservation(trajet: t),
+        ],
+      ],
+    );
+  }
+}
+
+/// Trajet réservé : conducteur, places, prix payé et discussion
+class _CarteReservation extends StatelessWidget {
+  final Trajet trajet;
+  const _CarteReservation({required this.trajet});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final t = trajet;
+    final places =
+        DiscussionService.instance.reservationDe(t.id, monId)?.places ?? 0;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0,
+      color: cs.surface,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.6)),
+      ),
+      child: InkWell(
+        onTap: () => _ouvrir(context, DetailTrajetPage(trajet: t)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _BlocDate(date: t.dateDepart, couleur: cs.primary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${t.villeDepart} → ${t.villeArrivee}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 16, fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            _PastilleStatut(statut: t.statut),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${tHeure(t.dateDepart)} – ${tHeure(t.dateArrivee)}'
+                          ' · ${tDuree(t.dureeMinutes)}',
+                          style: TextStyle(
+                              fontSize: 13, color: cs.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 4),
+                        _LigneIcone(
+                          icone: Icons.schedule,
+                          texte: switch (t.statut) {
+                            StatutTrajet.enCours => 'Trajet en cours',
+                            StatutTrajet.termine =>
+                              'Trajet terminé ${tJourRelatif(t.dateDepart)}',
+                            _ => 'Départ ${tCompteARebours(t.dateDepart)}',
+                          },
+                          couleur: t.statut == StatutTrajet.termine
+                              ? cs.onSurfaceVariant
+                              : cs.primary,
+                          gras: true,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 15,
+                    backgroundColor: cs.primaryContainer,
+                    child: Text(t.initialeConducteur,
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: cs.onPrimaryContainer)),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(t.conducteurNom,
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600)),
+                        Text('${t.conducteurNote}/5 · ${t.vehicule}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 11, color: cs.onSurfaceVariant)),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(tPrix(places * t.prixPlace),
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: cs.primary)),
+                      Text('$places place${places > 1 ? 's' : ''}',
+                          style: TextStyle(
+                              fontSize: 11, color: cs.onSurfaceVariant)),
+                    ],
+                  ),
+                ],
+              ),
+              const Divider(height: 20),
+              if (t.statut == StatutTrajet.termine)
+                _LigneAvisConducteur(trajet: t)
+              else
+                Row(
+                  children: [
+                    Expanded(
+                      child: _LigneIcone(
+                        icone: Icons.forum_outlined,
+                        texte: 'Discussion · ${resumeDiscussion(t)}',
+                        couleur: cs.onSurfaceVariant,
+                      ),
+                    ),
+                    // Jusqu'à 30 min avant le départ
+                    if (DiscussionService.instance
+                            .motifRefusAnnulation(t, monId) ==
+                        null)
+                      TextButton(
+                        style: TextButton.styleFrom(
+                            foregroundColor: _rouge,
+                            visualDensity: VisualDensity.compact),
+                        onPressed: () =>
+                            annulerReservationAvecConfirmation(context, t),
+                        child: const Text('Annuler'),
+                      ),
+                    BoutonDiscussion(trajet: t),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Trajet réservé terminé : la note donnée au conducteur, ou « Noter »
+class _LigneAvisConducteur extends StatelessWidget {
+  final Trajet trajet;
+  const _LigneAvisConducteur({required this.trajet});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final service = DiscussionService.instance;
+    final avis = service.evaluation(trajet.id, monId, trajet.conducteurId);
+    final aNoter = service.aNoter(trajet, monId).isNotEmpty;
+
+    return Row(
+      children: [
+        Expanded(
+          child: avis != null
+              ? Row(
+                  children: [
+                    Text('Votre note  ',
+                        style: TextStyle(
+                            fontSize: 12, color: cs.onSurfaceVariant)),
+                    EtoilesNote(note: avis.note.toDouble()),
+                  ],
+                )
+              : _LigneIcone(
+                  icone: Icons.star_outline_rounded,
+                  texte: aNoter
+                      ? 'Comment était le trajet ?'
+                      : 'Notation indisponible (absence)',
+                  couleur: cs.onSurfaceVariant,
+                ),
+        ),
+        if (aNoter)
+          FilledButton.tonalIcon(
+            style:
+                FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+            onPressed: () => ouvrirEvaluations(context, trajet),
+            icon: const Icon(Icons.star_rounded, size: 18),
+            label: const Text('Noter'),
+          ),
+        if (service.messages(trajet.id).isNotEmpty)
+          BoutonDiscussion(trajet: trajet),
       ],
     );
   }
@@ -604,6 +904,8 @@ class _BilanHistorique extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
+          const _LigneNoteMoyenne(),
+          const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
@@ -628,6 +930,46 @@ class _BilanHistorique extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Note moyenne reçue des passagers ; ouvre le détail des avis
+class _LigneNoteMoyenne extends StatelessWidget {
+  const _LigneNoteMoyenne();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final note = DiscussionService.instance.noteMoyenne(monId);
+
+    return Material(
+      color: const Color(0xFFF5A623).withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => afficherAvisRecus(context),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              EtoilesNote(note: note.moyenne, taille: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  note.nombre == 0
+                      ? 'Pas encore d’avis de passagers'
+                      : '${note.moyenne.toStringAsFixed(1)}/5 · '
+                          '${note.nombre} avis de passagers',
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 18, color: cs.onSurfaceVariant),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -721,12 +1063,14 @@ class _EtatVide extends StatelessWidget {
   final String titre;
   final String message;
   final String? action;
+  final IconData iconeAction;
   final VoidCallback? onAction;
   const _EtatVide({
     required this.icone,
     required this.titre,
     required this.message,
     this.action,
+    this.iconeAction = Icons.add,
     this.onAction,
   });
 
@@ -761,7 +1105,7 @@ class _EtatVide extends StatelessWidget {
             const SizedBox(height: 18),
             FilledButton.icon(
               onPressed: onAction,
-              icon: const Icon(Icons.add),
+              icon: Icon(iconeAction),
               label: Text(action!),
             ),
           ],
@@ -886,6 +1230,7 @@ class _CarteMonTrajet extends StatelessWidget {
                                 PublierTrajetPage(trajetAModifier: t)),
                             icon: const Icon(Icons.edit_outlined),
                           ),
+                        BoutonDiscussion(trajet: t),
                         IconButton(
                           tooltip: 'Plus d’actions',
                           onPressed: () => _ouvrirActions(context, t),
@@ -1131,27 +1476,49 @@ class _ActionsHistorique extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final messenger = ScaffoldMessenger.of(context);
+    final aNoter = DiscussionService.instance.aNoter(trajet, monId).length;
+    Future<void> republier() async {
+      final erreur = await TrajetService.instance.dupliquer(trajet);
+      messenger.showSnackBar(SnackBar(
+        content: Text(erreur ?? 'Trajet republié la semaine prochaine'),
+        backgroundColor: erreur == null ? null : Colors.red.shade700,
+      ));
+    }
+
     return Row(
       children: [
-        TextButton.icon(
-          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-          onPressed: () async {
-            final erreur = await TrajetService.instance.dupliquer(trajet);
-            messenger.showSnackBar(SnackBar(
-              content: Text(erreur ?? 'Trajet republié la semaine prochaine'),
-              backgroundColor: erreur == null ? null : Colors.red.shade700,
-            ));
-          },
-          icon: const Icon(Icons.replay, size: 18),
-          label: const Text('Republier'),
-        ),
+        // Passagers pas encore notés : « Noter » devient l'action principale
+        if (aNoter > 0)
+          FilledButton.tonalIcon(
+            style:
+                FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+            onPressed: () => ouvrirEvaluations(context, trajet),
+            icon: const Icon(Icons.star_rounded, size: 18),
+            label: Text('Noter ($aNoter)'),
+          )
+        else
+          TextButton.icon(
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            onPressed: republier,
+            icon: const Icon(Icons.replay, size: 18),
+            label: const Text('Republier'),
+          ),
         const Spacer(),
-        TextButton.icon(
-          style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact, foregroundColor: _rouge),
+        if (aNoter > 0)
+          IconButton(
+            tooltip: 'Republier la semaine prochaine',
+            visualDensity: VisualDensity.compact,
+            onPressed: republier,
+            icon: const Icon(Icons.replay),
+          ),
+        // La discussion reste consultable (lecture seule) après le trajet
+        if (DiscussionService.instance.messages(trajet.id).isNotEmpty)
+          BoutonDiscussion(trajet: trajet),
+        IconButton(
+          tooltip: 'Supprimer de l’historique',
+          visualDensity: VisualDensity.compact,
           onPressed: () => supprimerTrajetAvecConfirmation(context, trajet),
-          icon: const Icon(Icons.delete_outline, size: 18),
-          label: const Text('Supprimer'),
+          icon: const Icon(Icons.delete_outline, color: _rouge),
         ),
       ],
     );
@@ -1224,6 +1591,16 @@ void _ouvrirActions(BuildContext context, Trajet t) {
               onTap: () {
                 Navigator.pop(sheetCtx);
                 _ouvrir(context, PublierTrajetPage(trajetAModifier: t));
+              },
+            ),
+            _TuileAction(
+              icone: Icons.forum_outlined,
+              couleur: cs.primary,
+              titre: 'Discussion du trajet',
+              sousTitre: resumeDiscussion(t),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                ouvrirDiscussion(context, t);
               },
             ),
             _TuileAction(

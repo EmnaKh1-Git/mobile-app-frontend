@@ -16,6 +16,7 @@ import '../../../core/services/trajet_database.dart';
 import '../../../core/utils/geo.dart';
 import '../../../models/lieu.dart';
 import '../../../models/trajet.dart';
+import 'discussion_service.dart';
 
 /// Véhicule de l'utilisateur connecté (sera fourni par le module Utilisateur)
 const String monVehicule = 'Peugeot 208 – Grise';
@@ -72,6 +73,8 @@ class TrajetService extends ChangeNotifier {
       debugPrint('TrajetService : erreur de chargement SQLite : $e');
       _trajets = _donneesDemoNumerotees();
     } finally {
+      // Passagers et discussions des trajets (base « discussions.db »)
+      await DiscussionService.instance.charger(_trajets);
       _charge = true;
       notifyListeners();
     }
@@ -282,18 +285,31 @@ class TrajetService extends ChangeNotifier {
   }
 
   // ---------- Places (appelé par le module Réservation) ----------
-  Future<bool> reserverPlaces(int trajetId, int nb) async {
+  /// Réserve [nb] places pour le passager (par défaut l'utilisateur
+  /// connecté), qui rejoint la discussion du trajet.
+  Future<bool> reserverPlaces(
+    int trajetId,
+    int nb, {
+    int passagerId = monId,
+    String passagerNom = monNom,
+  }) async {
     final t = parId(trajetId);
     if (t == null || nb < 1 || t.placesDispo < nb) return false;
+    // Règle : un conducteur ne réserve pas de place sur son propre trajet
+    if (t.conducteurId == passagerId) return false;
     final restantes = t.placesDispo - nb;
     await _enregistrer(t.copyWith(
       placesDispo: restantes,
       statut: restantes == 0 ? StatutTrajet.complet : t.statut,
     ));
+    await DiscussionService.instance
+        .ajouterPassager(trajetId, passagerId, passagerNom, nb);
     return true;
   }
 
-  Future<void> libererPlaces(int trajetId, int nb) async {
+  /// Libère [nb] places ; avec [passagerId], sa réservation est réduite
+  /// d'autant (il quitte la discussion s'il n'a plus de place).
+  Future<void> libererPlaces(int trajetId, int nb, {int? passagerId}) async {
     final t = parId(trajetId);
     if (t == null) return;
     final dispo = (t.placesDispo + nb).clamp(0, t.placesTotales);
@@ -303,6 +319,26 @@ class TrajetService extends ChangeNotifier {
           ? StatutTrajet.publie
           : t.statut,
     ));
+    if (passagerId != null) {
+      await DiscussionService.instance.retirerPassager(trajetId, passagerId, nb);
+    }
+  }
+
+  /// Le passager annule sa réservation (jusqu'à 30 min avant le départ) :
+  /// ses places sont libérées et la discussion du trajet est prévenue.
+  /// Retourne null si tout va bien, sinon le message d'erreur.
+  Future<String?> annulerReservation(int trajetId,
+      {int passagerId = monId}) async {
+    final t = parId(trajetId);
+    if (t == null) return 'Trajet introuvable.';
+    final discussions = DiscussionService.instance;
+    final refus = discussions.motifRefusAnnulation(t, passagerId);
+    if (refus != null) return refus;
+
+    final reservation = discussions.reservationDe(trajetId, passagerId)!;
+    await discussions.annoncerAnnulation(t, reservation.nom);
+    await libererPlaces(trajetId, reservation.places, passagerId: passagerId);
+    return null;
   }
 
   // ---------- Cycle de vie ----------
@@ -328,20 +364,23 @@ class TrajetService extends ChangeNotifier {
       if (!kIsWeb) {
         await _db.delete(id); // les étapes sont supprimées par ON DELETE CASCADE
       }
-      _trajets.removeWhere((x) => x.id == id);
-      notifyListeners();
-      return null;
     } catch (e) {
-      _trajets.removeWhere((x) => x.id == id);
-      notifyListeners();
-      return null;
+      debugPrint('Erreur DB delete: $e');
     }
+    _trajets.removeWhere((x) => x.id == id);
+    notifyListeners();
+    // Les passagers et la discussion sont dans une autre base
+    await DiscussionService.instance.supprimerTrajet(id);
+    return null;
   }
 
   Future<void> _changerStatut(int id, StatutTrajet s) async {
     final t = parId(id);
     if (t == null) return;
-    await _enregistrer(t.copyWith(statut: s));
+    final maj = t.copyWith(statut: s);
+    await _enregistrer(maj);
+    // Les passagers sont prévenus dans la discussion du trajet
+    await DiscussionService.instance.signalerStatut(maj, s);
   }
 
   /// Écrit le trajet dans SQLite puis remplace la copie en mémoire
@@ -393,8 +432,32 @@ List<Trajet> _donneesDemo() {
   final n = DateTime.now();
   DateTime j(int jours, int h, int m) =>
       DateTime(n.year, n.month, n.day + jours, h, m);
+  // Départ dans ~1 h 15 (arrondi à 5 min) : sa discussion est déjà ouverte
+  final bientot = DateTime(n.year, n.month, n.day, n.hour,
+      n.minute - n.minute % 5 + 75);
 
   return [
+    Trajet(
+      id: 0,
+      conducteurId: monId,
+      conducteurNom: monNom,
+      vehicule: monVehicule,
+      villeDepart: 'Tunis',
+      adresseDepart: 'Les Berges du Lac 2',
+      villeArrivee: 'Ariana',
+      adresseArrivee: 'ESPRIT, El Ghazela',
+      latDepart: 36.8450,
+      lngDepart: 10.2730,
+      latArrivee: 36.8992,
+      lngArrivee: 10.1897,
+      dateDepart: bientot,
+      dureeMinutes: 25,
+      distanceKm: 14,
+      placesTotales: 3,
+      placesDispo: 1,
+      prixPlace: 3,
+      description: 'Navette du matin vers ESPRIT.',
+    ),
     Trajet(
       id: 0,
       conducteurId: monId,
@@ -577,6 +640,29 @@ List<Trajet> _donneesDemo() {
       placesTotales: 4,
       placesDispo: 0,
       prixPlace: 18,
+      statut: StatutTrajet.termine,
+    ),
+    // Trajet passé d'un autre conducteur : l'utilisateur y était passager
+    // et peut noter le conducteur
+    Trajet(
+      id: 0,
+      conducteurId: 8,
+      conducteurNom: 'Sami R.',
+      conducteurNote: 4.5,
+      vehicule: 'Kia Picanto – Rouge',
+      villeDepart: 'Tunis',
+      adresseDepart: 'Bab Saadoun',
+      villeArrivee: 'Bizerte',
+      latDepart: 36.8065,
+      lngDepart: 10.1650,
+      latArrivee: 37.2744,
+      lngArrivee: 9.8739,
+      dateDepart: j(-3, 17, 0),
+      dureeMinutes: 70,
+      distanceKm: 66,
+      placesTotales: 3,
+      placesDispo: 1,
+      prixPlace: 9,
       statut: StatutTrajet.termine,
     ),
   ];

@@ -10,9 +10,13 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../models/trajet.dart';
 import '../services/carte_service.dart';
+import '../services/discussion_service.dart';
 import '../services/trajet_service.dart';
 import '../utils/trajet_format.dart';
+import '../widgets/acces_discussion.dart';
 import '../widgets/carte_itineraire.dart';
+import '../widgets/evaluation_trajet.dart';
+import '../widgets/presence_passager.dart';
 import '../widgets/trajet_card.dart';
 import 'publier_trajet_page.dart';
 
@@ -82,22 +86,24 @@ class DetailTrajetPage extends StatelessWidget {
     // Le module Réservation appellera cette méthode du module Trajets
     final ok = await TrajetService.instance.reserverPlaces(trajet.id, nb);
     if (!context.mounted) return;
+    // On reste sur la page : la réservation et la discussion y apparaissent
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(ok
-            ? 'Réservation enregistrée : $nb place(s)'
+            ? 'Réservation enregistrée : $nb place(s). '
+                'Vous faites partie de la discussion du trajet.'
             : 'Plus assez de places disponibles'),
       ),
     );
-    if (ok) Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     // On relit le trajet dans le service : la page se met à jour
-    // après une modification ou une réservation.
+    // après une modification, une réservation ou un nouveau message.
     return ListenableBuilder(
-      listenable: TrajetService.instance,
+      listenable: Listenable.merge(
+          [TrajetService.instance, DiscussionService.instance]),
       builder: (context, _) {
         final aJour = TrajetService.instance.parId(trajet.id);
         if (aJour == null) {
@@ -118,6 +124,9 @@ class DetailTrajetPage extends StatelessWidget {
   Widget _page(BuildContext context, Trajet trajet) {
     final cs = Theme.of(context).colorScheme;
     final estMonTrajet = trajet.conducteurId == monId;
+    final discussions = DiscussionService.instance;
+    final maReservation = discussions.reservationDe(trajet.id, monId);
+    final participant = discussions.estParticipant(trajet, monId);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Détail du trajet')),
@@ -195,6 +204,63 @@ class DetailTrajetPage extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
+          // ---- Ma réservation (passager) ----
+          if (maReservation != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF22A06B).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle,
+                      color: Color(0xFF1B7F55), size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Vous avez réservé ${maReservation.places} '
+                      'place${maReservation.places > 1 ? 's' : ''} '
+                      '· ${tPrix(maReservation.places * trajet.prixPlace)}',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1B7F55)),
+                    ),
+                  ),
+                  // Annulation possible jusqu'à 30 min avant le départ
+                  if (discussions.motifRefusAnnulation(trajet, monId) == null)
+                    TextButton(
+                      style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFFA3281A),
+                          visualDensity: VisualDensity.compact),
+                      onPressed: () =>
+                          annulerReservationAvecConfirmation(context, trajet),
+                      child: const Text('Annuler'),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          // ---- Évaluation après le trajet ----
+          if (discussions.aNoter(trajet, monId).isNotEmpty) ...[
+            _CarteANoter(trajet: trajet),
+            const SizedBox(height: 12),
+          ],
+
+          // ---- Discussion (conducteur et passagers) ----
+          if (participant) ...[
+            CarteDiscussion(trajet: trajet),
+            const SizedBox(height: 16),
+          ],
+
+          // ---- Passagers (vus par le conducteur) ----
+          if (estMonTrajet) ...[
+            _ListePassagers(trajet: trajet),
+            const SizedBox(height: 16),
+          ],
+
           // ---- Conducteur ----
           Card(
             elevation: 0,
@@ -214,10 +280,14 @@ class DetailTrajetPage extends StatelessWidget {
                   style: const TextStyle(fontSize: 12)),
               trailing: IconButton(
                 icon: const Icon(Icons.chat_bubble_outline),
-                tooltip: 'Contacter (module Messagerie)',
-                onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Ouverture de la messagerie…')),
-                ),
+                tooltip: 'Discussion du trajet',
+                onPressed: participant
+                    ? () => ouvrirDiscussion(context, trajet)
+                    : () => ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Réservez une place pour rejoindre '
+                                  'la discussion du trajet.')),
+                        ),
               ),
             ),
           ),
@@ -388,6 +458,142 @@ class _CarteDuTrajetState extends State<_CarteDuTrajet> {
               ' • ${tDuree(t.dureeMinutes)}',
         );
       },
+    );
+  }
+}
+
+/// « Notez votre trajet » : le trajet est terminé et il reste des
+/// participants à noter
+class _CarteANoter extends StatelessWidget {
+  final Trajet trajet;
+  const _CarteANoter({required this.trajet});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final n = DiscussionService.instance.aNoter(trajet, monId).length;
+    final conducteur = trajet.conducteurId == monId;
+
+    return Material(
+      color: const Color(0xFFF5A623).withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => ouvrirEvaluations(context, trajet),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              const CircleAvatar(
+                radius: 20,
+                backgroundColor: Color(0xFFF5A623),
+                child: Icon(Icons.star_rounded, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Notez votre trajet',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 15)),
+                    Text(
+                      conducteur
+                          ? '$n passager${n > 1 ? 's' : ''} à noter'
+                          : 'Donnez votre avis sur ${trajet.conducteurNom}',
+                      style:
+                          TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: cs.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Passagers du trajet (nom, places, pointage), pour le conducteur
+class _ListePassagers extends StatelessWidget {
+  final Trajet trajet;
+  const _ListePassagers({required this.trajet});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final service = DiscussionService.instance;
+    final passagers = service.passagers(trajet.id);
+    final pointage = service.pointagePossible(trajet);
+    final bilan = service.bilanPresence(trajet.id);
+    final dejaPointe = bilan.presents + bilan.absents > 0;
+
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.6)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('Passagers', style: Theme.of(context).textTheme.titleSmall),
+                const Spacer(),
+                Text(
+                  pointage || dejaPointe
+                      ? '${bilan.presents}/${passagers.length} à bord'
+                          '${bilan.absents > 0 ? ' · ${bilan.absents} absent${bilan.absents > 1 ? 's' : ''}' : ''}'
+                      : '${trajet.placesReservees}/${trajet.placesTotales} places réservées',
+                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                ),
+              ],
+            ),
+            if (pointage && passagers.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('Au départ, pointez qui est monté à bord.',
+                    style: TextStyle(fontSize: 12, color: cs.primary)),
+              ),
+            const SizedBox(height: 6),
+            if (passagers.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Text('Aucun passager n’a encore réservé.',
+                    style: TextStyle(color: cs.onSurfaceVariant)),
+              ),
+            for (final p in passagers)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                leading: CircleAvatar(
+                  radius: 17,
+                  backgroundColor: cs.secondaryContainer,
+                  child: Text(p.initiale,
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: cs.onSecondaryContainer)),
+                ),
+                title: Text(p.nom,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text(
+                    '${p.places} place${p.places > 1 ? 's' : ''} · '
+                    'réservé ${tJourRelatif(p.dateReservation)}'),
+                trailing: pointage
+                    ? BoutonsPresence(trajet: trajet, passager: p)
+                    : dejaPointe
+                        ? PastillePresence(presence: p.presence)
+                        : null,
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
