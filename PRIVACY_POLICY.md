@@ -13,7 +13,7 @@ L’application UniDrive est éditée par **Emna Kh**.
 Pour toute question relative à vos données personnelles, vous pouvez nous
 contacter à l’adresse suivante :
 
-**support@covoiturage-etudiant.tn**
+**oussama.bengamra@esprit.tn**
 
 ## 2. Données traitées
 
