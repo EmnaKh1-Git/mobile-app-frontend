@@ -9,6 +9,7 @@ import '../features/trajet/services/trajet_service.dart';
 import '../features/trajet/screens/recherche_trajet_page.dart';
 import '../features/trajet/screens/publier_trajet_page.dart';
 import '../features/trajet/screens/mes_trajets_page.dart';
+import '../features/trajet/widgets/bouton_notifications.dart';
 import '../features/planning/screens/planning_home.dart';
 import '../features/messagerie/screens/messagerie_page.dart';
 import '../features/reclamation/screens/reclamation_page.dart';
@@ -194,18 +195,8 @@ class _HomeDashboardTab extends StatelessWidget {
                       ],
                     ),
                   ),
-                  IconButton.outlined(
-                    onPressed: () => onNavigateToTab(2),
-                    icon: const Badge(
-                      smallSize: 9,
-                      backgroundColor: AppColors.accent,
-                      child: Icon(
-                        Icons.notifications_none_rounded,
-                        color: AppColors.texte,
-                      ),
-                    ),
-                    tooltip: 'Notifications',
-                  ),
+                  // Centre de notifications (module Trajets)
+                  const BoutonNotifications(contour: true),
                 ],
               ),
 

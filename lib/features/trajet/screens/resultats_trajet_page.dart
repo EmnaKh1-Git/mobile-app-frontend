@@ -1,7 +1,8 @@
 // ============================================================
 //  MODULE : GESTION DES TRAJETS (Yassine)
 //  Fichier : lib/features/trajet/screens/resultats_trajet_page.dart
-//  Écran : résultats de recherche (tri + prix maximum)
+//  Écran : résultats de recherche (tri, prix maximum, préférences)
+//  Sans résultat, ou pour être prévenu des prochains trajets : alerte.
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import '../../../models/lieu.dart';
 import '../services/trajet_service.dart';
 import '../utils/trajet_format.dart';
 import '../widgets/trajet_card.dart';
+import 'alertes_page.dart';
 import 'detail_trajet_page.dart';
 
 class ResultatsTrajetPage extends StatefulWidget {
@@ -39,6 +41,52 @@ class ResultatsTrajetPage extends StatefulWidget {
 class _ResultatsTrajetPageState extends State<ResultatsTrajetPage> {
   String _tri = 'heure';
   double _prixMax = 100;
+
+  // Préférences du passager
+  bool _entreFilles = false;
+  bool _nonFumeur = false;
+  bool _bagages = false;
+  bool _animaux = false;
+
+  Future<void> _creerAlerte() => creerAlerteEtInformer(
+        context,
+        depart: widget.depart,
+        arrivee: widget.arrivee,
+        jour: widget.date,
+        places: widget.places,
+      );
+
+  /// Puces des préférences, au-dessus des résultats
+  Widget _preferences() {
+    Widget puce(String libelle, IconData icone, bool choisi,
+            ValueChanged<bool> onChanged) =>
+        FilterChip(
+          avatar: Icon(icone, size: 16),
+          label: Text(libelle),
+          selected: choisi,
+          showCheckmark: false,
+          onSelected: (v) => setState(() => onChanged(v)),
+        );
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Row(
+        children: [
+          for (final p in [
+            puce('Entre filles', Icons.woman, _entreFilles,
+                (v) => _entreFilles = v),
+            puce('Non-fumeur', Icons.smoke_free, _nonFumeur,
+                (v) => _nonFumeur = v),
+            puce('Bagages', Icons.luggage, _bagages, (v) => _bagages = v),
+            puce('Animaux', Icons.pets, _animaux, (v) => _animaux = v),
+          ]) ...[
+            p,
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
 
   static const Map<String, String> _tris = {
     'heure': 'Heure de départ',
@@ -147,36 +195,49 @@ class _ResultatsTrajetPageState extends State<ResultatsTrajetPage> {
             date: widget.date,
             placesMin: widget.places,
             prixMax: _prixMax,
+            nonFumeur: _nonFumeur,
+            bagages: _bagages,
+            animaux: _animaux,
+            entreFilles: _entreFilles,
             tri: _tri,
           );
 
           if (liste.isEmpty) {
-            return const EtatVideTrajet(
-              icone: Icons.search_off,
-              titre: 'Aucun trajet trouvé',
-              message:
-                  'Essayez une autre date ou une autre ville,\nou créez une alerte.',
+            return Column(
+              children: [
+                _preferences(),
+                Expanded(
+                  child: EtatVideTrajet(
+                    icone: Icons.search_off,
+                    titre: 'Aucun trajet trouvé',
+                    message: 'Essayez une autre date ou une autre ville,\n'
+                        'ou soyez prévenu dès qu’un trajet est publié.',
+                    action: FilledButton.icon(
+                      onPressed: _creerAlerte,
+                      icon: const Icon(Icons.notifications_active_outlined),
+                      label: const Text('Créer une alerte'),
+                    ),
+                  ),
+                ),
+              ],
             );
           }
 
           return ListView(
             padding: const EdgeInsets.only(bottom: 24),
             children: [
+              _preferences(),
               Padding(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 child: Row(
                   children: [
-                    Text('${liste.length} trajet(s) disponible(s)'),
-                    const Spacer(),
+                    Expanded(
+                      child: Text('${liste.length} trajet(s) disponible(s)',
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ),
                     TextButton.icon(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content:
-                                  Text('Alerte créée pour cette recherche')),
-                        );
-                      },
+                      onPressed: _creerAlerte,
                       icon: const Icon(Icons.notifications_none, size: 18),
                       label: const Text('Alerte'),
                     ),

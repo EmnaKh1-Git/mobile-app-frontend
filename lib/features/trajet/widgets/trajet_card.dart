@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '../../../models/trajet.dart';
 import '../services/trajet_service.dart';
 import '../utils/trajet_format.dart';
+import 'options_trajet.dart';
 
 class TrajetCard extends StatelessWidget {
   final Trajet trajet;
@@ -137,6 +138,8 @@ class TrajetCard extends StatelessWidget {
                     ),
                 ],
               ),
+              const SizedBox(height: 10),
+              PastillesOptions(trajet: trajet),
             ],
           ),
         ),
@@ -200,17 +203,61 @@ Future<bool> supprimerTrajetAvecConfirmation(
   return erreur == null;
 }
 
+/// Demande confirmation puis annule la réservation de l'utilisateur
+/// (places libérées, discussion prévenue).
+/// Retourne true si la réservation a été annulée.
+Future<bool> annulerReservationAvecConfirmation(
+    BuildContext context, Trajet trajet) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final confirme = await showDialog<bool>(
+    context: context,
+    builder: (dctx) => AlertDialog(
+      icon: const Icon(Icons.event_busy, color: Color(0xFFA3281A)),
+      title: const Text('Annuler votre réservation ?'),
+      content: Text(
+        '${trajet.villeDepart} → ${trajet.villeArrivee}\n'
+        '${tDateCourte(trajet.dateDepart)} à ${tHeure(trajet.dateDepart)}\n\n'
+        'Vos places seront libérées et ${trajet.conducteurNom} sera prévenu.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dctx, false),
+          child: const Text('Garder'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFC2361F)),
+          onPressed: () => Navigator.pop(dctx, true),
+          child: const Text('Annuler la réservation'),
+        ),
+      ],
+    ),
+  );
+  if (confirme != true) return false;
+
+  final erreur = await TrajetService.instance.annulerReservation(trajet.id);
+  messenger.showSnackBar(SnackBar(
+    content: Text(erreur ?? 'Réservation annulée'),
+    backgroundColor: erreur == null ? null : Colors.red.shade700,
+  ));
+  return erreur == null;
+}
+
 /// Message affiché quand une liste est vide
 class EtatVideTrajet extends StatelessWidget {
   final IconData icone;
   final String titre;
   final String message;
 
+  /// Bouton affiché sous le message (facultatif)
+  final Widget? action;
+
   const EtatVideTrajet({
     super.key,
     required this.icone,
     required this.titre,
     required this.message,
+    this.action,
   });
 
   @override
@@ -229,6 +276,10 @@ class EtatVideTrajet extends StatelessWidget {
             Text(message,
                 textAlign: TextAlign.center,
                 style: TextStyle(color: cs.onSurfaceVariant)),
+            if (action != null) ...[
+              const SizedBox(height: 20),
+              action!,
+            ],
           ],
         ),
       ),
