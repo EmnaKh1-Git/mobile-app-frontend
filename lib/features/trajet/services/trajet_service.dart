@@ -18,13 +18,24 @@ import '../../../core/services/complements_database.dart';
 import '../../../core/services/trajet_database.dart';
 import '../../../core/utils/geo.dart';
 import '../../../models/lieu.dart';
+import '../../user/services/user_service.dart';
 import '../../../models/trajet.dart';
 import '../utils/trajet_format.dart';
 import 'discussion_service.dart';
 import 'notification_service.dart';
 
-/// Véhicule de l'utilisateur connecté (sera fourni par le module Utilisateur)
-const String monVehicule = 'Peugeot 208 – Grise';
+/// Véhicule de l'utilisateur connecté (profil du module Utilisateur),
+/// ou le véhicule de démonstration s'il n'en a pas renseigné
+String get monVehicule {
+  final u = UserService.instance.currentUser;
+  final modele = [u?.marqueVehicule, u?.modeleVehicule]
+      .whereType<String>()
+      .where((s) => s.trim().isNotEmpty)
+      .join(' ');
+  if (modele.isEmpty) return 'Peugeot 208 – Grise';
+  final couleur = u?.couleurVehicule?.trim() ?? '';
+  return couleur.isEmpty ? modele : '$modele – $couleur';
+}
 const int maCapacite = 4;
 
 class TrajetService extends ChangeNotifier {
@@ -47,8 +58,20 @@ class TrajetService extends ChangeNotifier {
 
   // ---------- Chargement ----------
   /// Lit tous les trajets dans SQLite (insère la démo si la base est vide).
-  /// Le chargement n'a lieu qu'une fois ; les appels suivants attendent le même.
-  Future<void> charger() => _chargement ??= _charger();
+  /// Le chargement n'a lieu qu'une fois par utilisateur ; les appels suivants
+  /// attendent le même. Si un autre utilisateur s'est connecté depuis, les
+  /// trajets, discussions et notifications sont relus pour lui.
+  Future<void> charger() {
+    if (_chargePour != null && _chargePour != monId) {
+      _chargement = null;
+      DiscussionService.instance.reinitialiser();
+      NotificationService.instance.reinitialiser();
+    }
+    return _chargement ??= _charger();
+  }
+
+  /// Utilisateur (monId) pour lequel les données ont été chargées
+  int? _chargePour;
 
   /// Relit la base (par exemple après une modification faite ailleurs)
   Future<void> recharger() {
@@ -66,6 +89,7 @@ class TrajetService extends ChangeNotifier {
   }
 
   Future<void> _charger() async {
+    _chargePour = monId;
     try {
       if (kIsWeb) {
         _trajets = _donneesDemoNumerotees();
@@ -391,9 +415,11 @@ class TrajetService extends ChangeNotifier {
   Future<bool> reserverPlaces(
     int trajetId,
     int nb, {
-    int passagerId = monId,
-    String passagerNom = monNom,
+    int? passagerId,
+    String? passagerNom,
   }) async {
+    passagerId ??= monId;
+    passagerNom ??= monNom;
     final t = parId(trajetId);
     if (t == null || nb < 1 || t.placesDispo < nb) return false;
     // Règle : un conducteur ne réserve pas de place sur son propre trajet
@@ -429,7 +455,8 @@ class TrajetService extends ChangeNotifier {
   /// ses places sont libérées et la discussion du trajet est prévenue.
   /// Retourne null si tout va bien, sinon le message d'erreur.
   Future<String?> annulerReservation(int trajetId,
-      {int passagerId = monId}) async {
+      {int? passagerId}) async {
+    passagerId ??= monId;
     final t = parId(trajetId);
     if (t == null) return 'Trajet introuvable.';
     final discussions = DiscussionService.instance;

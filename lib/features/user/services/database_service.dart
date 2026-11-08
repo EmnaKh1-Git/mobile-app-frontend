@@ -83,7 +83,11 @@ class DatabaseServicee {
       whereArgs: [email.trim().toLowerCase()],
       limit: 1,
     );
-    return rows.isNotEmpty && rows.first['password'] == password;
+    // Un profil recopié depuis Supabase n'a pas de mot de passe local :
+    // il se connecte uniquement via Supabase Auth
+    return password.isNotEmpty &&
+        rows.isNotEmpty &&
+        rows.first['password'] == password;
   }
 
   Future<bool> updatePassword(String email, String newPassword) async {
@@ -150,6 +154,29 @@ class DatabaseServicee {
           whereArgs: [email.trim().toLowerCase()],
         ) >
         0;
+  }
+
+  /// Recopie localement des profils lus dans Supabase (sans toucher aux
+  /// mots de passe locaux existants). Un profil inconnu est ajouté sans
+  /// mot de passe local.
+  Future<void> synchroniserProfils(List<UserModel> profils) async {
+    final db = await _database;
+    await db.transaction((txn) async {
+      for (final user in profils) {
+        final values = user.toMap()
+          ..['isBanni'] = user.isBanni ? 1 : 0
+          ..['isBloque'] = user.isBloque ? 1 : 0;
+        final maj = await txn.update(
+          'app_users',
+          values,
+          where: 'id = ? OR LOWER(email) = ?',
+          whereArgs: [user.id, user.email.trim().toLowerCase()],
+        );
+        if (maj == 0) {
+          await txn.insert('app_users', {...values, 'password': ''});
+        }
+      }
+    });
   }
 
   Future<List<UserModel>> getAllUsers() async {

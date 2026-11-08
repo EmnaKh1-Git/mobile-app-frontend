@@ -77,6 +77,17 @@ class NotificationService extends ChangeNotifier {
   /// des événements pas encore signalés. Appelé par TrajetService.
   Future<void> charger() => _chargement ??= _charger();
 
+  /// Oublie les données chargées (changement d'utilisateur) : le prochain
+  /// charger() relit tout
+  void reinitialiser() {
+    _notifications.clear();
+    _alertes.clear();
+    _charge = false;
+    _chargement = null;
+  }
+
+  bool _ecoute = false;
+
   Future<void> _charger() async {
     var baseVide = true;
     if (_persister) {
@@ -91,7 +102,8 @@ class NotificationService extends ChangeNotifier {
     if (_principal && baseVide) await _insererDemo();
     _charge = true;
     await verifier();
-    if (_principal) {
+    if (_principal && !_ecoute) {
+      _ecoute = true;
       // Une réservation, une évaluation ou un changement de statut
       // peut créer une notification
       TrajetService.instance.addListener(_surChangement);

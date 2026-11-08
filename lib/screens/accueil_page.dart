@@ -34,6 +34,9 @@ class _AccueilPageState extends State<AccueilPage> {
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
+    // Les trajets ont pu être chargés avant la connexion (main.dart) :
+    // charger() les relit si l'utilisateur a changé
+    TrajetService.instance.charger();
   }
 
   void _onTabSelected(int index) {

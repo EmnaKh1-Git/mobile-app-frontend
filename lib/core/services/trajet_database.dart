@@ -21,6 +21,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/lieu.dart';
 import '../../models/trajet.dart';
+import 'synchro_supabase.dart';
 
 class TrajetDatabase {
   TrajetDatabase._init();
@@ -145,35 +146,79 @@ CREATE TABLE $tableEtapes (
     await _creerTableLieux(db);
   }
 
+  // ---------- Synchronisation Supabase ----------
+
+  static const _trajets = TableSynchro(
+    tableTrajets,
+    colonnes: [
+      'id', 'conducteur_id', 'conducteur_nom', 'conducteur_note',
+      'ville_depart', 'adresse_depart', 'ville_arrivee', 'adresse_arrivee',
+      'date_depart', 'duree_minutes', 'distance_km', 'vehicule',
+      'capacite_vehicule', 'places_totales', 'places_disponibles',
+      'prix_place', 'bagages', 'fumeur', 'animaux', 'reservation_auto',
+      'description', 'statut', 'date_creation', 'lat_depart', 'lng_depart',
+      'lat_arrivee', 'lng_arrivee', 'itineraire',
+    ],
+    dates: {'date_depart', 'date_creation'},
+    booleens: {'bagages', 'fumeur', 'animaux', 'reservation_auto'},
+    reels: {
+      'conducteur_note', 'distance_km', 'prix_place', 'lat_depart',
+      'lng_depart', 'lat_arrivee', 'lng_arrivee',
+    },
+  );
+
+  static const _etapes = TableSynchro(
+    tableEtapes,
+    distante: 'trajet_etapes',
+    colonnes: ['trajet_id', 'ville', 'ordre', 'prix'],
+    reels: {'prix'},
+  );
+
+  /// Remplace la copie locale par les trajets (et étapes) de Supabase.
+  /// Renvoie false si Supabase est injoignable.
+  Future<bool> _miroir(Database db) async {
+    final distants = await SynchroSupabase.lire(_trajets,
+        select: '*, trajet_etapes(*)');
+    if (distants == null) return false;
+    try {
+      await db.transaction((txn) async {
+        await txn.delete(tableEtapes);
+        await txn.delete(tableTrajets);
+        for (final row in distants) {
+          await txn.insert(tableTrajets, _trajets.versLocal(row));
+          for (final e in (row['trajet_etapes'] as List?) ?? const []) {
+            await txn.insert(
+                tableEtapes, _etapes.versLocal(Map<String, dynamic>.from(e)));
+          }
+        }
+      });
+      return true;
+    } catch (error) {
+      debugPrint('[TrajetDatabase] Copie locale Supabase impossible : $error');
+      return false;
+    }
+  }
+
   // ---------- CRUD ----------
 
-  /// Insère un trajet (et ses étapes) et le renvoie avec l'id attribué par SQLite
+  /// Insère un trajet (et ses étapes) et le renvoie avec l'id attribué
+  /// par Supabase (ou par SQLite hors connexion)
   Future<Trajet> create(Trajet trajet) async {
     final db = await instance.database;
     var id = trajet.id;
-    try {
-      final remote = await Supabase.instance.client
-          .from(tableTrajets)
-          .insert(_remoteMap(trajet)..remove('id'))
-          .select('id')
-          .single();
-      id = (remote['id'] as num).toInt();
-      for (final etape in trajet.etapes) {
-        await Supabase.instance.client.from('trajet_etapes').insert({
-          'trajet_id': id,
-          'ville': etape.ville,
-          'ordre': etape.ordre,
-          'prix': etape.prix,
-        });
+    final idDistant = await SynchroSupabase.inserer(_trajets, trajet.toMap());
+    if (idDistant != null) {
+      id = idDistant;
+      for (final e in trajet.etapes) {
+        await SynchroSupabase.inserer(_etapes, e.toMap(id));
       }
-    } catch (error) {
-      debugPrint('[TrajetDatabase] Création Supabase impossible : $error');
     }
     await db.transaction((txn) async {
       // toMap() n'inclut pas l'id quand il vaut 0 : SQLite le génère
       final localMap = trajet.toMap();
       if (id > 0) localMap['id'] = id;
-      id = await txn.insert(tableTrajets, localMap);
+      id = await txn.insert(tableTrajets, localMap,
+          conflictAlgorithm: ConflictAlgorithm.replace);
       for (final e in trajet.etapes) {
         await txn.insert(tableEtapes, e.toMap(id));
       }
@@ -181,34 +226,13 @@ CREATE TABLE $tableEtapes (
     return trajet.copyWith(id: id);
   }
 
-  /// Tous les trajets, triés par date de départ, avec leurs étapes
+  /// Tous les trajets, triés par date de départ, avec leurs étapes.
+  /// La copie locale est d'abord mise à jour depuis Supabase.
   Future<List<Trajet>> readAll() async {
     final db = await instance.database;
+    await _miroir(db);
     final lignes = await db.query(tableTrajets, orderBy: 'date_depart ASC');
     final lignesEtapes = await db.query(tableEtapes, orderBy: 'ordre ASC');
-    try {
-      final remote = await Supabase.instance.client
-          .from(tableTrajets)
-          .select('*, trajet_etapes(*)')
-          .order('date_depart');
-      for (final row in remote) {
-        final map = _localMap(Map<String, dynamic>.from(row));
-        await db.insert(
-          tableTrajets,
-          map..remove('id'),
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-      }
-      return remote.map((row) {
-        final map = _localMap(Map<String, dynamic>.from(row));
-        final steps = ((row['trajet_etapes'] as List?) ?? [])
-            .map((item) => Etape.fromMap(_localMap(item)))
-            .toList();
-        return Trajet.fromMap(map, etapes: steps);
-      }).toList();
-    } catch (error) {
-      debugPrint('[TrajetDatabase] Lecture Supabase impossible : $error');
-    }
 
     // Regroupe les étapes par trajet_id
     final etapesParTrajet = <int, List<Etape>>{};
@@ -253,18 +277,12 @@ CREATE TABLE $tableEtapes (
       where: 'id = ?',
       whereArgs: [trajet.id],
     );
-    try {
-      await Supabase.instance.client
-          .from(tableTrajets)
-          .update(_remoteMap(trajet)..remove('id'))
-          .eq('id', trajet.id);
-    } catch (error) {
-      debugPrint('[TrajetDatabase] Mise à jour Supabase impossible : $error');
-    }
+    await SynchroSupabase.modifier(_trajets, trajet.id, trajet.toMap());
     return updated;
   }
 
   /// Supprime un trajet ; ses étapes sont supprimées par ON DELETE CASCADE
+  /// (dans SQLite comme dans Supabase)
   Future<int> delete(int id) async {
     final db = await instance.database;
     final deleted = await db.delete(
@@ -272,58 +290,9 @@ CREATE TABLE $tableEtapes (
       where: 'id = ?',
       whereArgs: [id],
     );
-    try {
-      await Supabase.instance.client.from(tableTrajets).delete().eq('id', id);
-    } catch (error) {
-      debugPrint('[TrajetDatabase] Suppression Supabase impossible : $error');
-    }
+    await SynchroSupabase.supprimer(_trajets, 'id', id);
     return deleted;
   }
-
-  Map<String, dynamic> _remoteMap(Trajet trajet) => {
-    if (trajet.id > 0) 'id': trajet.id,
-    'conducteur_id': trajet.conducteurId,
-    'conducteur_nom': trajet.conducteurNom,
-    'conducteur_note': trajet.conducteurNote,
-    'ville_depart': trajet.villeDepart,
-    'adresse_depart': trajet.adresseDepart,
-    'ville_arrivee': trajet.villeArrivee,
-    'adresse_arrivee': trajet.adresseArrivee,
-    'date_depart': trajet.dateDepart.toIso8601String(),
-    'duree_minutes': trajet.dureeMinutes,
-    'distance_km': trajet.distanceKm,
-    'vehicule': trajet.vehicule,
-    'capacite_vehicule': trajet.capaciteVehicule,
-    'places_totales': trajet.placesTotales,
-    'places_disponibles': trajet.placesDispo,
-    'prix_place': trajet.prixPlace,
-    'bagages': trajet.bagages,
-    'fumeur': trajet.fumeur,
-    'animaux': trajet.animaux,
-    'reservation_auto': trajet.reservationAuto,
-    'description': trajet.description,
-    'statut': trajet.statut.name,
-    'date_creation': trajet.dateCreation.toIso8601String(),
-    'lat_depart': trajet.latDepart,
-    'lng_depart': trajet.lngDepart,
-    'lat_arrivee': trajet.latArrivee,
-    'lng_arrivee': trajet.lngArrivee,
-    'itineraire': trajet.itineraire,
-  };
-
-  Map<String, dynamic> _localMap(Map<String, dynamic> map) => {
-    ...map,
-    'conducteur_id':
-        (map['conducteur_id'] as num?)?.toInt() ??
-        int.tryParse(map['conducteur_id'].toString()) ??
-        0,
-    'bagages': map['bagages'] == true ? 1 : map['bagages'],
-    'fumeur': map['fumeur'] == true ? 1 : map['fumeur'],
-    'animaux': map['animaux'] == true ? 1 : map['animaux'],
-    'reservation_auto': map['reservation_auto'] == true
-        ? 1
-        : map['reservation_auto'],
-  };
 
   Future<int> count() async {
     final db = await instance.database;
@@ -341,6 +310,12 @@ CREATE TABLE $tableEtapes (
       await db.delete(tableTrajets);
     }
     if (await count() > 0) return;
+    // Supabase contient déjà des trajets (base remplie par supabase/seed.sql
+    // ou par d'autres utilisateurs) : pas de démonstration
+    if (!force) {
+      final distants = await SynchroSupabase.lire(_trajets, select: 'id');
+      if (distants != null && distants.isNotEmpty) return;
+    }
     for (final t in demo) {
       await create(t);
     }

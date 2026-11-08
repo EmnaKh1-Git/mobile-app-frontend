@@ -496,7 +496,22 @@ class UserService extends ChangeNotifier {
     }
   }
 
+  /// Tous les utilisateurs : profils Supabase (recopiés localement) et
+  /// comptes créés sur cet appareil
   Future<List<UserModel>> getAllUsersForAdmin() async {
+    try {
+      final rows =
+          await SupabaseService.instance.client.from('profiles').select();
+      await _db.synchroniserProfils([
+        for (final row in rows)
+          UserModel.fromMap({
+            ...Map<String, dynamic>.from(row),
+            'id': row['local_id'] ?? row['id'],
+          }),
+      ]);
+    } catch (error) {
+      debugPrint('[UserService] Profils Supabase non lus : $error');
+    }
     return _db.getAllUsers();
   }
 

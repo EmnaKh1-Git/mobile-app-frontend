@@ -254,10 +254,7 @@ class MessagerieRepository {
           .upsert(
             membres
                 .map(
-                  (membre) => {
-                    'conversation_id': conversation.id,
-                    ...membre.toMap(),
-                  },
+                  (membre) => _membreRemoteMap(conversation.id, membre),
                 )
                 .toList(),
             onConflict: 'conversation_id,user_id',
@@ -279,10 +276,10 @@ class MessagerieRepository {
       ...membre.toMap(),
     }, conflictAlgorithm: ConflictAlgorithm.replace);
     try {
-      await _supabase.from('msg_membre').upsert({
-        'conversation_id': conversationId,
-        ...membre.toMap(),
-      }, onConflict: 'conversation_id,user_id');
+      await _supabase.from('msg_membre').upsert(
+        _membreRemoteMap(conversationId, membre),
+        onConflict: 'conversation_id,user_id',
+      );
     } catch (error) {
       debugPrint('[MessagerieRepository] Membre non synchronisé : $error');
     }
@@ -346,7 +343,7 @@ class MessagerieRepository {
     try {
       await _supabase
           .from('msg_membre')
-          .update({'last_read_at': DateTime.now().toIso8601String()})
+          .update({'last_read_at': DateTime.now().toUtc().toIso8601String()})
           .eq('conversation_id', conversationId)
           .eq('user_id', moi);
     } catch (error) {
@@ -468,14 +465,36 @@ class MessagerieRepository {
     }
   }
 
+  // Dates : SQLite garde l'heure locale sans fuseau, Supabase un
+  // timestamptz. Elles partent en UTC et reviennent en heure locale.
+  static String? _versUtc(Object? date) => date == null
+      ? null
+      : DateTime.tryParse(date.toString())?.toUtc().toIso8601String();
+
+  static String? _versLocale(Object? date) => date == null
+      ? null
+      : DateTime.tryParse(date.toString())?.toLocal().toIso8601String();
+
+  Map<String, dynamic> _membreRemoteMap(String conversationId, Membre m) {
+    final map = m.toMap();
+    return {
+      'conversation_id': conversationId,
+      ...map,
+      'last_read_at': _versUtc(map['last_read_at']),
+    };
+  }
+
   Map<String, dynamic> _conversationRemoteMap(Conversation value) => {
     ...value.toMap(),
+    'created_at': _versUtc(value.toMap()['created_at']),
     'archivee': value.archive,
     'muet': value.muet,
   };
 
   Map<String, dynamic> _messageRemoteMap(Message value) => {
     ...value.toMap(),
+    'date_envoi': _versUtc(value.dateEnvoi),
+    'date_suppression': _versUtc(value.dateSuppression),
     'ecoute': value.ecoute,
     'signale': value.estSignale,
     'masque': value.masque,
@@ -485,14 +504,20 @@ class MessagerieRepository {
 
   Map<String, dynamic> _localConversationMap(Map<String, dynamic> value) => {
     ...value,
+    'created_at': _versLocale(value['created_at']),
     'archivee': value['archivee'] == true ? 1 : value['archivee'],
     'muet': value['muet'] == true ? 1 : value['muet'],
   };
 
-  Map<String, dynamic> _localMemberMap(Map<String, dynamic> value) => value;
+  Map<String, dynamic> _localMemberMap(Map<String, dynamic> value) => {
+    ...value,
+    'last_read_at': _versLocale(value['last_read_at']),
+  };
 
   Map<String, dynamic> _localMessageMap(Map<String, dynamic> value) => {
     ...value,
+    'date_envoi': _versLocale(value['date_envoi']),
+    'date_suppression': _versLocale(value['date_suppression']),
     'ecoute': value['ecoute'] == true ? 1 : value['ecoute'],
     'signale': value['signale'] == true ? 1 : value['signale'],
     'masque': value['masque'] == true ? 1 : value['masque'],

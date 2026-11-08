@@ -15,12 +15,17 @@
 //
 //  Les trajets sont dans une autre base : quand un trajet est
 //  supprimé, supprimerTrajet() efface aussi sa discussion.
+//
+//  Synchronisation Supabase (synchro_supabase.dart) : les mêmes
+//  tables existent dans Supabase (supabase/schema.sql). Les lectures
+//  recopient Supabase dans SQLite, les écritures vont dans les deux.
 // ============================================================
 
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../../models/discussion_trajet.dart';
+import 'synchro_supabase.dart';
 
 class DiscussionDatabase {
   DiscussionDatabase._init();
@@ -32,6 +37,35 @@ class DiscussionDatabase {
   static const String tableMessages = 'messages_trajet';
   static const String tableLectures = 'lectures_discussion';
   static const String tableEvaluations = 'evaluations_trajet';
+
+  static const _passagers = TableSynchro(
+    tablePassagers,
+    colonnes: [
+      'id', 'trajet_id', 'passager_id', 'nom', 'places',
+      'date_reservation', 'presence',
+    ],
+    dates: {'date_reservation'},
+  );
+  static const _messages = TableSynchro(
+    tableMessages,
+    colonnes: [
+      'id', 'trajet_id', 'auteur_id', 'auteur_nom', 'texte', 'type', 'date',
+    ],
+    dates: {'date'},
+  );
+  static const _lectures = TableSynchro(
+    tableLectures,
+    colonnes: ['trajet_id', 'user_id', 'lu_jusqu_a'],
+    dates: {'lu_jusqu_a'},
+  );
+  static const _evaluations = TableSynchro(
+    tableEvaluations,
+    colonnes: [
+      'id', 'trajet_id', 'auteur_id', 'auteur_nom', 'cible_id', 'cible_nom',
+      'note', 'commentaire', 'date',
+    ],
+    dates: {'date'},
+  );
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -125,39 +159,57 @@ CREATE TABLE $tableLectures (
 
   Future<List<PassagerTrajet>> lirePassagers() async {
     final db = await instance.database;
+    await SynchroSupabase.miroir(db, _passagers);
     final res = await db.query(tablePassagers, orderBy: 'date_reservation ASC');
     return res.map(PassagerTrajet.fromMap).toList();
   }
 
-  /// Insère la réservation et la renvoie avec l'id attribué par SQLite
+  /// Insère la réservation et la renvoie avec l'id attribué
+  /// (par Supabase, ou par SQLite hors connexion)
   Future<PassagerTrajet> ajouterPassager(PassagerTrajet p) async {
     final db = await instance.database;
-    final id = await db.insert(tablePassagers, p.toMap());
+    final ligne = p.toMap();
+    final idDistant = await SynchroSupabase.inserer(_passagers, ligne);
+    if (idDistant != null) ligne['id'] = idDistant;
+    final id = await db.insert(tablePassagers, ligne,
+        conflictAlgorithm: ConflictAlgorithm.replace);
     return p.copyWith(id: id);
   }
 
   Future<int> modifierPassager(PassagerTrajet p) async {
     final db = await instance.database;
-    return db.update(tablePassagers, p.toMap(),
+    final res = await db.update(tablePassagers, p.toMap(),
         where: 'id = ?', whereArgs: [p.id]);
+    if (p.id != null) {
+      await SynchroSupabase.modifier(_passagers, p.id!, p.toMap());
+    }
+    return res;
   }
 
   Future<int> supprimerPassager(int id) async {
     final db = await instance.database;
-    return db.delete(tablePassagers, where: 'id = ?', whereArgs: [id]);
+    final res =
+        await db.delete(tablePassagers, where: 'id = ?', whereArgs: [id]);
+    await SynchroSupabase.supprimer(_passagers, 'id', id);
+    return res;
   }
 
   // ---------- Messages ----------
 
   Future<List<MessageTrajet>> lireMessages() async {
     final db = await instance.database;
+    await SynchroSupabase.miroir(db, _messages);
     final res = await db.query(tableMessages, orderBy: 'date ASC');
     return res.map(MessageTrajet.fromMap).toList();
   }
 
   Future<MessageTrajet> ajouterMessage(MessageTrajet m) async {
     final db = await instance.database;
-    final id = await db.insert(tableMessages, m.toMap());
+    final ligne = m.toMap();
+    final idDistant = await SynchroSupabase.inserer(_messages, ligne);
+    if (idDistant != null) ligne['id'] = idDistant;
+    final id = await db.insert(tableMessages, ligne,
+        conflictAlgorithm: ConflictAlgorithm.replace);
     return m.copyWith(id: id);
   }
 
@@ -166,6 +218,14 @@ CREATE TABLE $tableLectures (
   /// trajet_id → date du dernier message lu par [userId]
   Future<Map<int, DateTime>> lireLectures(int userId) async {
     final db = await instance.database;
+    final distantes = await SynchroSupabase.lire(_lectures,
+        colonne: 'user_id', valeur: userId);
+    if (distantes != null) {
+      for (final l in distantes) {
+        await db.insert(tableLectures, _lectures.versLocal(l),
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    }
     final res = await db
         .query(tableLectures, where: 'user_id = ?', whereArgs: [userId]);
     return {
@@ -176,28 +236,33 @@ CREATE TABLE $tableLectures (
 
   Future<void> enregistrerLecture(int trajetId, int userId, DateTime date) async {
     final db = await instance.database;
-    await db.insert(
-      tableLectures,
-      {
-        'trajet_id': trajetId,
-        'user_id': userId,
-        'lu_jusqu_a': date.toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    final ligne = {
+      'trajet_id': trajetId,
+      'user_id': userId,
+      'lu_jusqu_a': date.toIso8601String(),
+    };
+    await db.insert(tableLectures, ligne,
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    await SynchroSupabase.upsert(_lectures, ligne,
+        conflit: 'trajet_id,user_id');
   }
 
   // ---------- Évaluations ----------
 
   Future<List<EvaluationTrajet>> lireEvaluations() async {
     final db = await instance.database;
+    await SynchroSupabase.miroir(db, _evaluations);
     final res = await db.query(tableEvaluations, orderBy: 'date DESC');
     return res.map(EvaluationTrajet.fromMap).toList();
   }
 
   Future<EvaluationTrajet> ajouterEvaluation(EvaluationTrajet e) async {
     final db = await instance.database;
-    final id = await db.insert(tableEvaluations, e.toMap());
+    final ligne = e.toMap();
+    final idDistant = await SynchroSupabase.inserer(_evaluations, ligne);
+    if (idDistant != null) ligne['id'] = idDistant;
+    final id = await db.insert(tableEvaluations, ligne,
+        conflictAlgorithm: ConflictAlgorithm.replace);
     return e.copyWith(id: id);
   }
 
@@ -214,5 +279,8 @@ CREATE TABLE $tableLectures (
         await txn.delete(table, where: 'trajet_id = ?', whereArgs: [trajetId]);
       }
     });
+    for (final t in [_passagers, _messages, _lectures, _evaluations]) {
+      await SynchroSupabase.supprimer(t, 'trajet_id', trajetId);
+    }
   }
 }

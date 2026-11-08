@@ -11,12 +11,23 @@
 //    alertes_trajet       : les alertes de recherche
 //    options_trajet       : série d'un trajet régulier et option
 //                           « Entre filles », liées par trajet_id
+//
+//  Synchronisation Supabase (synchro_supabase.dart) :
+//    - alertes_trajet : partagée, avec une colonne user_id dans
+//      Supabase (chaque utilisateur ne relit que ses alertes) ;
+//    - options_trajet : partagée (tout le monde voit qu'un trajet est
+//      régulier ou « Entre filles ») ;
+//    - notifications_trajet : reste locale, car les notifications
+//      sont recalculées sur chaque appareil à partir des trajets,
+//      réservations et évaluations, déjà synchronisés.
 // ============================================================
 
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../../models/notification_trajet.dart';
+import '../constants/app_constants.dart';
+import 'synchro_supabase.dart';
 
 class ComplementsDatabase {
   ComplementsDatabase._init();
@@ -27,6 +38,20 @@ class ComplementsDatabase {
   static const String tableNotifications = 'notifications_trajet';
   static const String tableAlertes = 'alertes_trajet';
   static const String tableOptions = 'options_trajet';
+
+  static const _alertes = TableSynchro(
+    tableAlertes,
+    colonnes: [
+      'id', 'ville_depart', 'ville_arrivee', 'jour', 'heure', 'moment',
+      'places', 'date_creation',
+    ],
+    dates: {'jour', 'date_creation'},
+  );
+  static const _options = TableSynchro(
+    tableOptions,
+    colonnes: ['trajet_id', 'serie_id', 'entre_filles'],
+    booleens: {'entre_filles'},
+  );
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -106,21 +131,31 @@ CREATE TABLE $tableOptions (
 
   // ---------- Alertes ----------
 
+  /// Alertes de l'utilisateur connecté (la copie locale ne garde que les siennes)
   Future<List<AlerteTrajet>> lireAlertes() async {
     final db = await instance.database;
+    await SynchroSupabase.miroir(db, _alertes,
+        filtreDistant: 'user_id', valeur: monId);
     final res = await db.query(tableAlertes, orderBy: 'date_creation DESC');
     return res.map(AlerteTrajet.fromMap).toList();
   }
 
   Future<AlerteTrajet> ajouterAlerte(AlerteTrajet a) async {
     final db = await instance.database;
-    final id = await db.insert(tableAlertes, a.toMap());
+    final ligne = a.toMap();
+    final idDistant = await SynchroSupabase.inserer(
+        _alertes, ligne, extra: {'user_id': monId});
+    if (idDistant != null) ligne['id'] = idDistant;
+    final id = await db.insert(tableAlertes, ligne,
+        conflictAlgorithm: ConflictAlgorithm.replace);
     return a.copyWith(id: id);
   }
 
   Future<int> supprimerAlerte(int id) async {
     final db = await instance.database;
-    return db.delete(tableAlertes, where: 'id = ?', whereArgs: [id]);
+    final res = await db.delete(tableAlertes, where: 'id = ?', whereArgs: [id]);
+    await SynchroSupabase.supprimer(_alertes, 'id', id);
+    return res;
   }
 
   // ---------- Options des trajets ----------
@@ -128,6 +163,7 @@ CREATE TABLE $tableOptions (
   /// trajet_id → série et option « Entre filles »
   Future<Map<int, ({String? serieId, bool entreFilles})>> lireOptions() async {
     final db = await instance.database;
+    await SynchroSupabase.miroir(db, _options);
     final res = await db.query(tableOptions);
     return {
       for (final m in res)
@@ -141,15 +177,14 @@ CREATE TABLE $tableOptions (
   Future<void> enregistrerOptions(
       int trajetId, String? serieId, bool entreFilles) async {
     final db = await instance.database;
-    await db.insert(
-      tableOptions,
-      {
-        'trajet_id': trajetId,
-        'serie_id': serieId,
-        'entre_filles': entreFilles ? 1 : 0,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    final ligne = {
+      'trajet_id': trajetId,
+      'serie_id': serieId,
+      'entre_filles': entreFilles ? 1 : 0,
+    };
+    await db.insert(tableOptions, ligne,
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    await SynchroSupabase.upsert(_options, ligne, conflit: 'trajet_id');
   }
 
   /// Efface les options et les notifications d'un trajet supprimé
@@ -160,5 +195,6 @@ CREATE TABLE $tableOptions (
         await txn.delete(table, where: 'trajet_id = ?', whereArgs: [trajetId]);
       }
     });
+    await SynchroSupabase.supprimer(_options, 'trajet_id', trajetId);
   }
 }

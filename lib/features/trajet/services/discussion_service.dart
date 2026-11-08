@@ -90,6 +90,17 @@ class DiscussionService extends ChangeNotifier {
   Future<void> charger(List<Trajet> trajets) =>
       _chargement ??= _charger(trajets);
 
+  /// Oublie les données chargées (changement d'utilisateur) : le prochain
+  /// charger() relit tout
+  void reinitialiser() {
+    _passagers.clear();
+    _messages.clear();
+    _evaluations.clear();
+    _lus.clear();
+    _charge = false;
+    _chargement = null;
+  }
+
   Future<void> _charger(List<Trajet> trajets) async {
     if (_persister) {
       try {
@@ -206,9 +217,10 @@ class DiscussionService extends ChangeNotifier {
     Trajet t,
     int passagerId,
     PresencePassager presence, {
-    int auteurId = monId,
+    int? auteurId,
     DateTime? maintenant,
   }) async {
+    auteurId ??= monId;
     if (auteurId != t.conducteurId) {
       return 'Seul le conducteur peut pointer les passagers.';
     }
