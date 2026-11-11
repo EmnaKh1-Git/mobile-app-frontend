@@ -2,7 +2,7 @@ name: covoiturage_etudiant
 description: "UniDrive - Application de covoiturage pour étudiants tunisiens"
 publish_to: 'none'
 
-version: 1.0.1+2
+version: 1.0.2+3
 
 environment:
   sdk: ^3.13.3

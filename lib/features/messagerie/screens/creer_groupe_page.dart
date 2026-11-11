@@ -7,6 +7,7 @@ import '../../../app/theme.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../models/trajet.dart';
 
+import '../../trajet/services/discussion_service.dart';
 import '../../trajet/services/trajet_service.dart';
 
 import '../models/membre.dart';
@@ -124,6 +125,7 @@ class _CreerGroupePageState
       listenable: Listenable.merge([
         MessagerieService.instance,
         TrajetService.instance,
+        DiscussionService.instance,
       ]),
       builder: (context, _) {
         final trajets = MessagerieService.instance

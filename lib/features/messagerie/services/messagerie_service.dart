@@ -8,11 +8,11 @@ import '../../../core/utils/helpers.dart';
 import '../../../models/trajet.dart';
 import '../../reclamation/models/reclamation.dart';
 import '../../reclamation/services/reclamation_service.dart';
+import '../../trajet/services/discussion_service.dart';
 import '../../trajet/services/trajet_service.dart';
 import '../../user/models/user_model.dart';
 import '../../user/services/user_service.dart';
 
-import '../data/messagerie_provisoire.dart';
 import '../data/messagerie_repository.dart';
 import '../models/conversation.dart';
 import '../models/membre.dart';
@@ -21,8 +21,6 @@ import '../models/message.dart';
 import 'audio_service.dart';
 import 'contexte_utilisateur.dart';
 import 'filtre_contenu.dart';
-
-export '../data/messagerie_provisoire.dart' show Reservation;
 
 // ============================================================
 // SERVICE MESSAGERIE
@@ -41,9 +39,10 @@ class MessagerieException implements Exception {
 
 class MessagerieService extends ChangeNotifier {
   MessagerieService._() {
-    _reservations = List<Reservation>.of(reservationsProvisoires);
     _dernierIdUtilisateur = _moiId;
     UserService.instance.addListener(_surChangementUtilisateur);
+    // Les réservations viennent du module Trajets (passagers_trajet)
+    DiscussionService.instance.addListener(notifyListeners);
     unawaited(charger());
   }
 
@@ -167,7 +166,6 @@ class MessagerieService extends ChangeNotifier {
     _avertissements = 0;
     _suspensionFin = null;
     _utilisateurs = const [];
-    _reservations = List<Reservation>.of(reservationsProvisoires);
     notifyListeners();
 
     unawaited(_rechargerApresChangement());
@@ -289,7 +287,25 @@ class MessagerieService extends ChangeNotifier {
   // TRAJETS ET RÉSERVATIONS
   // ---------------------------------------------------------
 
-  List<Reservation> _reservations = [];
+  /// Utilisateurs inscrits ayant réservé ce trajet.
+  ///
+  /// Les réservations sont celles du module Trajets (table
+  /// `passagers_trajet`, via DiscussionService) : toute ligne présente
+  /// est une réservation confirmée. Leurs identifiants sont numériques,
+  /// on les rapproche des comptes `app_users` avec idTrajetDe().
+  List<UserModel> _passagersReserves(String trajetId) {
+    final id = int.tryParse(trajetId);
+    if (id == null) return const [];
+    final ids = {
+      for (final p in DiscussionService.instance.passagers(id))
+        p.passagerId,
+    };
+    if (ids.isEmpty) return const [];
+    return [
+      for (final u in _utilisateurs)
+        if (ids.contains(idTrajetDe(u.id))) u,
+    ];
+  }
 
   /// Charge les utilisateurs réellement inscrits (table `app_users`).
   Future<void> chargerUtilisateurs() {
@@ -386,14 +402,8 @@ class MessagerieService extends ChangeNotifier {
   List<Membre> passagersDuTrajet(String trajetId) {
     final resultat = <Membre>[];
     final vus = <String>{};
-    for (final reservation in _reservations) {
-      if (reservation.trajetId != trajetId ||
-          !reservation.confirmee) {
-        continue;
-      }
-      final passager = utilisateur(reservation.passagerId);
-      if (passager == null ||
-          passager.isBanni ||
+    for (final passager in _passagersReserves(trajetId)) {
+      if (passager.isBanni ||
           passager.isBloque ||
           passager.id == _moiId ||
           !vus.add(passager.id)) {
@@ -1044,24 +1054,23 @@ class MessagerieService extends ChangeNotifier {
     );
     final trajetAssocie = _trajetDe(conversation);
 
-    final index = _reservations.indexWhere(
-      (reservation) =>
-          reservation.trajetId == trajetAssocie.id.toString() &&
-          reservation.passagerId == passagerId &&
-          reservation.confirmee,
-    );
+    final passagerNom =
+        utilisateur(passagerId)?.nomComplet ?? passagerId;
 
-    if (index == -1) {
+    if (!_passagersReserves(trajetAssocie.id.toString())
+        .any((u) => u.id == passagerId)) {
       throw MessagerieException(
-        'Aucune réservation confirmée pour '
-        '$passagerId.',
+        'Aucune réservation confirmée pour $passagerNom.',
       );
     }
 
-    final passagerNom =
-        utilisateur(passagerId)?.nomComplet ?? passagerId;
-    _reservations[index] =
-        _reservations[index].copyWith(confirmee: false);
+    // Annulation réelle dans le module Trajets (règle des 30 min,
+    // places libérées, discussion et notifications du trajet).
+    final refus = await TrajetService.instance.annulerReservation(
+      trajetAssocie.id,
+      passagerId: idTrajetDe(passagerId),
+    );
+    if (refus != null) throw MessagerieException(refus);
 
     if (conversation.membreParId(passagerId) != null) {
       await _repository.retirerMembre(
@@ -1640,12 +1649,8 @@ class MessagerieService extends ChangeNotifier {
         passager.isBloque) {
       return false;
     }
-    return _reservations.any(
-      (reservation) =>
-          reservation.trajetId == trajetId &&
-          reservation.passagerId == passagerId &&
-          reservation.confirmee,
-    );
+    return _passagersReserves(trajetId)
+        .any((u) => u.id == passagerId);
   }
 
   Membre _expediteurSimule(Conversation conversation) {
