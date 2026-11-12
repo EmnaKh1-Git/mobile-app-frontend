@@ -8,6 +8,7 @@ import 'forgot_password_page.dart';
 import 'widgets/captcha_widget.dart';
 import 'widgets/google_sign_in_modal.dart';
 import 'widgets/auth_map_background.dart';
+import 'widgets/biometric_scanner_modal.dart';
 import 'privacy_policy_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -30,6 +31,7 @@ class _LoginPageState extends State<LoginPage> {
   bool _rememberMe = true;
   bool _isLoading = false;
   bool _isGoogleLoading = false;
+  bool _isBiometricLoading = false;
   String? _errorMessage;
 
   @override
@@ -38,6 +40,81 @@ class _LoginPageState extends State<LoginPage> {
     _passwordController.dispose();
     _captchaController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleBiometricLogin() async {
+    setState(() {
+      _isBiometricLoading = true;
+      _errorMessage = null;
+    });
+
+    final inputEmail = _emailController.text.trim();
+    // Si aucun email n'est saisi dans le champ, targetEmail est null pour permettre
+    // l'identification automatique multi-comptes parmi tous les profils de l'appareil
+    final targetEmail = inputEmail.isNotEmpty ? inputEmail : null;
+
+    final result = await BiometricScannerModal.show(
+      context,
+      targetEmail: targetEmail,
+    );
+
+    if (!mounted) return;
+
+    if (result != null && result.success) {
+      final emailToLogin = result.email ?? targetEmail;
+      if (emailToLogin == null || emailToLogin.isEmpty) {
+        setState(() {
+          _errorMessage = 'Aucun compte associé à cette biométrie.';
+          _isBiometricLoading = false;
+        });
+        return;
+      }
+
+      final success = await _userService.loginWithBiometrics(
+        email: emailToLogin,
+        skipHardwareCheck: true,
+      );
+
+      if (!mounted) return;
+
+      if (success) {
+        final bioLabel = result.biometricType == 'face'
+            ? 'Reconnaissance Faciale'
+            : 'Empreinte Digitale';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '✓ Connexion réussie ($bioLabel) ! Bienvenue sur UniDrive.',
+            ),
+            backgroundColor: AppColors.primaire,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const AccueilPage()),
+        );
+      } else {
+        setState(() {
+          _errorMessage =
+              _userService.errorMessage ?? 'Identifiants biométriques non reconnus.';
+        });
+      }
+    } else if (result != null && !result.success) {
+      setState(() {
+        _errorMessage = result.message;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message),
+          backgroundColor: Colors.red[700],
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+
+    setState(() {
+      _isBiometricLoading = false;
+    });
   }
 
   Future<void> _handleLogin() async {
@@ -160,7 +237,7 @@ class _LoginPageState extends State<LoginPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Welcom Back',
+                              'Welcome Back',
                               style: TextStyle(
                                 fontSize: 28,
                                 fontWeight: FontWeight.bold,
@@ -434,13 +511,18 @@ class _LoginPageState extends State<LoginPage> {
                         ),
 
                         TextButton(
-                          onPressed: () {
-                            Navigator.of(context).push(
+                          onPressed: () async {
+                            final resetEmail =
+                                await Navigator.of(context).push<String>(
                               MaterialPageRoute(
                                 builder: (context) =>
                                     const ForgotPasswordPage(),
                               ),
                             );
+                            if (resetEmail != null && resetEmail.isNotEmpty) {
+                              _emailController.text = resetEmail;
+                              _passwordController.clear();
+                            }
                           },
                           style: TextButton.styleFrom(
                             padding: EdgeInsets.zero,
@@ -501,6 +583,62 @@ class _LoginPageState extends State<LoginPage> {
                                   fontWeight: FontWeight.bold,
                                   letterSpacing: 0.2,
                                 ),
+                              ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Bouton Biométrique (Empreinte & Reconnaissance Faciale)
+                    SizedBox(
+                      height: 50,
+                      child: OutlinedButton(
+                        onPressed:
+                            _isBiometricLoading ? null : _handleBiometricLogin,
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(
+                            color: AppColors.primaire,
+                            width: 1.5,
+                          ),
+                          backgroundColor:
+                              AppColors.primaireDoux.withValues(alpha: 0.35),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                        ),
+                        child: _isBiometricLoading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.primaire,
+                                ),
+                              )
+                            : const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.fingerprint_rounded,
+                                    color: AppColors.primaire,
+                                    size: 22,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'Connexion Empreinte / Visage',
+                                    style: TextStyle(
+                                      color: AppColors.primaire,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  SizedBox(width: 6),
+                                  Icon(
+                                    Icons.face_rounded,
+                                    color: AppColors.accent,
+                                    size: 19,
+                                  ),
+                                ],
                               ),
                       ),
                     ),

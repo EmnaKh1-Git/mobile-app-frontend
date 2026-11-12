@@ -25,7 +25,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 6,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade, // <-- ON AJOUTE LA FONCTION DE MISE À JOUR
     );
@@ -123,6 +123,25 @@ class DatabaseService {
     if (oldVersion < 4) {
       await MessagerieSchema.creerTables(db);
     }
+    if (oldVersion < 5) {
+      try {
+        await db.execute('ALTER TABLE app_users ADD COLUMN biometrieActive INTEGER NOT NULL DEFAULT 0;');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE app_users ADD COLUMN faceEnrolled INTEGER NOT NULL DEFAULT 0;');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE app_users ADD COLUMN fingerprintEnrolled INTEGER NOT NULL DEFAULT 0;');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE app_users ADD COLUMN faceDataPath TEXT;');
+      } catch (_) {}
+    }
+    if (oldVersion < 6) {
+      try {
+        await db.execute('ALTER TABLE app_users ADD COLUMN fingerprintDataPath TEXT;');
+      } catch (_) {}
+    }
   }
 
   Future<void> _createAppUsersTable(Database db) async {
@@ -149,7 +168,12 @@ class DatabaseService {
         isBanni INTEGER NOT NULL DEFAULT 0,
         isBloque INTEGER NOT NULL DEFAULT 0,
         raisonBlocage TEXT,
-        password TEXT NOT NULL
+        password TEXT NOT NULL,
+        biometrieActive INTEGER NOT NULL DEFAULT 0,
+        faceEnrolled INTEGER NOT NULL DEFAULT 0,
+        fingerprintEnrolled INTEGER NOT NULL DEFAULT 0,
+        faceDataPath TEXT,
+        fingerprintDataPath TEXT
       )
     ''');
   }

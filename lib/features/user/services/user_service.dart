@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import 'database_service.dart';
 import 'email_service.dart';
+import 'biometric_service.dart';
 import '../../../core/services/cloudinary_service.dart';
 import '../../../core/services/supabase_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class UserService extends ChangeNotifier {
   static final UserService _instance = UserService._internal();
@@ -34,47 +36,65 @@ class UserService extends ChangeNotifier {
     notifyListeners();
 
     final normalizedEmail = email.trim().toLowerCase();
-    UserModel? user;
-    try {
-      final response = await SupabaseService.instance.client.auth
-          .signInWithPassword(email: normalizedEmail, password: password);
-      final remoteUser = response.user;
-      if (remoteUser != null) {
-        final profile = await SupabaseService.instance.client
-            .from('profiles')
-            .select()
-            .eq('id', remoteUser.id)
-            .maybeSingle();
-        if (profile != null) {
-          user = UserModel.fromMap({
-            ...Map<String, dynamic>.from(profile),
-            'id': profile['local_id'] ?? remoteUser.id,
-          });
-          await _db.insertUser(user, password);
-        }
-      }
-    } catch (error) {
-      debugPrint('[UserService] Connexion Supabase indisponible : $error');
-    }
-    user ??= await _db.getUserByEmail(normalizedEmail);
+    final cleanPassword = password.trim();
 
-    if (user != null && user.isBanni) {
-      _errorMessage =
-          '🚫 Ce compte a été suspendu par l\'administration.\n${user.raisonBlocage ?? "Veuillez contacter le support."}';
+    // 1. Vérification locale prioritaire (SQLite) : source de vérité
+    final localUser = await _db.getUserByEmail(normalizedEmail);
+    UserModel? user;
+
+    if (localUser != null) {
+      final isLocalValid =
+          await _db.verifyCredentials(normalizedEmail, cleanPassword);
+      if (isLocalValid) {
+        user = localUser;
+        // Tenter d'authentifier Supabase en arrière-plan avec le mot de passe valide
+        try {
+          await SupabaseService.instance.client.auth
+              .signInWithPassword(email: normalizedEmail, password: cleanPassword);
+        } catch (_) {}
+      } else {
+        // Le mot de passe entré ne correspond PAS au mot de passe actif du compte
+        // L'ancien mot de passe révoqué ou un mot de passe erroné est STRICTEMENT rejeté
+        _errorMessage = 'Mot de passe incorrect. Veuillez vérifier vos identifiants.';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+    } else {
+      // 2. Si le compte n'existe pas encore en local (premier accès sur ce terminal)
+      try {
+        final response = await SupabaseService.instance.client.auth
+            .signInWithPassword(email: normalizedEmail, password: cleanPassword);
+        final remoteUser = response.user;
+        if (remoteUser != null) {
+          final profile = await SupabaseService.instance.client
+              .from('profiles')
+              .select()
+              .eq('id', remoteUser.id)
+              .maybeSingle();
+          if (profile != null) {
+            user = UserModel.fromMap({
+              ...Map<String, dynamic>.from(profile),
+              'id': profile['local_id'] ?? remoteUser.id,
+            });
+            await _db.insertUser(user, cleanPassword);
+          }
+        }
+      } catch (error) {
+        debugPrint('[UserService] Connexion distante impossible : $error');
+      }
+    }
+
+    if (user == null) {
+      _errorMessage = 'Aucun compte associé à l\'adresse "$email".';
       _isLoading = false;
       notifyListeners();
       return false;
     }
 
-    final isValid =
-        user != null &&
-        (SupabaseService.instance.currentUser?.email == normalizedEmail ||
-            await _db.verifyCredentials(normalizedEmail, password));
-
-    if (!isValid) {
-      _errorMessage = user == null
-          ? 'Aucun compte associé à l\'adresse "$email".'
-          : 'Mot de passe incorrect. Veuillez vérifier vos identifiants.';
+    if (user.isBanni) {
+      _errorMessage =
+          '🚫 Ce compte a été suspendu par l\'administration.\n${user.raisonBlocage ?? "Veuillez contacter le support."}';
       _isLoading = false;
       notifyListeners();
       return false;
@@ -85,6 +105,129 @@ class UserService extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     return true;
+  }
+
+  Future<bool> loginWithBiometrics({
+    String? email,
+    bool skipHardwareCheck = false,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    final creds = await BiometricService.instance.getEnrolledCredentials();
+    final targetEmail = (email != null && email.trim().isNotEmpty)
+        ? email.trim().toLowerCase()
+        : creds?['email'] as String?;
+
+    if (targetEmail == null || targetEmail.isEmpty) {
+      _errorMessage = 'Aucune empreinte ou visage configuré sur cet appareil.';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+
+    if (!skipHardwareCheck) {
+      final authenticated = await BiometricService.instance.authenticateSystem(
+        reason:
+            'Authentifiez-vous par empreinte ou visage pour accéder à UniDrive',
+      );
+      if (!authenticated) {
+        _errorMessage = 'Authentification biométrique annulée ou non reconnue.';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+    }
+
+    final user = await _db.getUserByEmail(targetEmail);
+    if (user == null) {
+      _errorMessage = 'Le compte associé à cette biométrie est introuvable.';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+
+    if (user.isBanni) {
+      _errorMessage =
+          '🚫 Ce compte a été suspendu par l\'administration.\n${user.raisonBlocage ?? "Veuillez contacter le support."}';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+
+    _currentUser = user;
+    _isLoading = false;
+    _errorMessage = null;
+    notifyListeners();
+    return true;
+  }
+
+  Future<bool> enrollBiometrics({
+    required String email,
+    required String password,
+    required bool faceEnrolled,
+    required bool fingerprintEnrolled,
+    String? faceDataPath,
+    String? fingerprintDataPath,
+  }) async {
+    final normalizedEmail = email.trim().toLowerCase();
+    final user = await _db.getUserByEmail(normalizedEmail);
+    if (user == null) return false;
+
+    await BiometricService.instance.saveEnrolledCredentials(
+      email: normalizedEmail,
+      password: password,
+      faceEnrolled: faceEnrolled,
+      fingerprintEnrolled: fingerprintEnrolled,
+      faceDataPath: faceDataPath,
+    );
+
+    await _db.updateBiometrics(
+      user.id,
+      enabled: true,
+      face: faceEnrolled,
+      fingerprint: fingerprintEnrolled,
+      faceDataPath: faceDataPath,
+    );
+
+    if (_currentUser != null && _currentUser!.id == user.id) {
+      _currentUser = _currentUser!.copyWith(
+        biometrieActive: true,
+        faceEnrolled: faceEnrolled,
+        fingerprintEnrolled: fingerprintEnrolled,
+        faceDataPath: faceDataPath ?? _currentUser!.faceDataPath,
+      );
+    }
+
+    notifyListeners();
+    return true;
+  }
+
+  Future<void> disableBiometrics(String email) async {
+    final normalizedEmail = email.trim().toLowerCase();
+    final user = await _db.getUserByEmail(normalizedEmail);
+    await BiometricService.instance.clearBiometrics();
+
+    if (user != null) {
+      await _db.updateBiometrics(
+        user.id,
+        enabled: false,
+        face: false,
+        fingerprint: false,
+      );
+    }
+
+    if (_currentUser != null &&
+        _currentUser!.email.toLowerCase() == normalizedEmail) {
+      _currentUser = _currentUser!.copyWith(
+        biometrieActive: false,
+        faceEnrolled: false,
+        fingerprintEnrolled: false,
+      );
+    }
+
+    notifyListeners();
   }
 
   Future<bool> loginWithGoogleAccount({
@@ -157,6 +300,11 @@ class UserService extends ChangeNotifier {
     String? immatriculation,
     int placesDisponibles = 3,
     String? avatarUrl,
+    bool biometrieActive = false,
+    bool faceEnrolled = false,
+    bool fingerprintEnrolled = false,
+    String? faceDataPath,
+    String? fingerprintDataPath,
   }) async {
     _isLoading = true;
     _errorMessage = null;
@@ -205,9 +353,29 @@ class UserService extends ChangeNotifier {
       note: 5.0,
       nombreTrajets: 0,
       dateInscription: DateTime.now(),
+      biometrieActive: biometrieActive || faceEnrolled || fingerprintEnrolled,
+      faceEnrolled: faceEnrolled,
+      fingerprintEnrolled: fingerprintEnrolled,
+      faceDataPath: faceDataPath,
+      fingerprintDataPath: fingerprintDataPath,
     );
 
     await _db.insertUser(newUser, password);
+
+    if (biometrieActive || faceEnrolled || fingerprintEnrolled) {
+      try {
+        await BiometricService.instance.saveEnrolledCredentials(
+          email: normalizedEmail,
+          password: password,
+          faceEnrolled: faceEnrolled,
+          fingerprintEnrolled: fingerprintEnrolled,
+          faceDataPath: faceDataPath,
+          fingerprintDataPath: fingerprintDataPath,
+        );
+      } catch (e) {
+        debugPrint('[UserService] Enregistrement biométrique local ignoré : $e');
+      }
+    }
     try {
       final response = await SupabaseService.instance.client.auth.signUp(
         email: normalizedEmail,
@@ -312,11 +480,60 @@ class UserService extends ChangeNotifier {
     await Future.delayed(const Duration(milliseconds: 300));
 
     final normalizedEmail = email.trim().toLowerCase();
-    final success = await _db.updatePassword(normalizedEmail, newPassword);
+    final cleanPassword = newPassword.trim();
+
+    // 1. S'assurer que le profil existe en base locale
+    var user = await _db.getUserByEmail(normalizedEmail);
+    if (user == null) {
+      try {
+        final profile = await SupabaseService.instance.client
+            .from('profiles')
+            .select()
+            .eq('email', normalizedEmail)
+            .maybeSingle();
+        if (profile != null) {
+          user = UserModel.fromMap({
+            ...Map<String, dynamic>.from(profile),
+            'id': profile['local_id'] ?? profile['id'],
+          });
+          await _db.insertUser(user, cleanPassword);
+        }
+      } catch (e) {
+        debugPrint('[UserService] Recherche profil distant pour reset: $e');
+      }
+    }
+
+    // 2. Mettre à jour le mot de passe dans SQLite
+    bool success = await _db.updatePassword(normalizedEmail, cleanPassword);
+    if (!success && user != null) {
+      await _db.insertUser(user, cleanPassword);
+      success = true;
+    }
 
     if (success) {
       _resetCodes.remove(normalizedEmail);
       _currentUser = await _db.getUserByEmail(normalizedEmail);
+
+      // 3. Mettre à jour les identifiants biométriques enregistrés pour ce compte
+      try {
+        await BiometricService.instance.updateSavedPassword(
+          normalizedEmail,
+          cleanPassword,
+        );
+      } catch (e) {
+        debugPrint('[UserService] Erreur mise à jour mot de passe bio: $e');
+      }
+
+      // 4. Mettre à jour Supabase Auth si une session est disponible
+      try {
+        if (SupabaseService.instance.currentUser?.email == normalizedEmail) {
+          await SupabaseService.instance.client.auth.updateUser(
+            UserAttributes(password: cleanPassword),
+          );
+        }
+      } catch (e) {
+        debugPrint('[UserService] Note: Supabase updateUser: $e');
+      }
     } else {
       _errorMessage = 'Erreur lors de la mise à jour du mot de passe.';
     }
