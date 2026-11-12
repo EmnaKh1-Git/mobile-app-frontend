@@ -25,7 +25,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade, // <-- ON AJOUTE LA FONCTION DE MISE À JOUR
     );
@@ -142,6 +142,11 @@ class DatabaseService {
         await db.execute('ALTER TABLE app_users ADD COLUMN fingerprintDataPath TEXT;');
       } catch (_) {}
     }
+    if (oldVersion < 7) {
+      try {
+        await db.execute('ALTER TABLE reclamations ADD COLUMN meta TEXT;');
+      } catch (_) {}
+    }
   }
 
   Future<void> _createAppUsersTable(Database db) async {
@@ -192,7 +197,8 @@ class DatabaseService {
         imagePath TEXT,
         audioPath TEXT,
         aiConseil TEXT,
-        responses TEXT NOT NULL
+        responses TEXT NOT NULL,
+        meta TEXT
       )
     ''');
   }

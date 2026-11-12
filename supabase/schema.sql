@@ -18,6 +18,10 @@ create table if not exists public.reclamations (
   created_at timestamptz not null default now()
 );
 
+-- Métier avancé : priorité, auteur, historique, satisfaction...
+alter table public.reclamations
+  add column if not exists meta jsonb not null default '{}'::jsonb;
+
 alter table public.reclamations enable row level security;
 
 drop policy if exists "reclamations anon read" on public.reclamations;

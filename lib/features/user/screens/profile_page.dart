@@ -12,7 +12,6 @@ import 'admin_dashboard_page.dart';
 import 'widgets/user_avatar_view.dart';
 import 'widgets/biometric_enrollment_widget.dart';
 import 'widgets/biometric_scanner_modal.dart';
-import '../../reclamation/models/reclamation.dart';
 import '../../reclamation/screens/reclamation_page.dart';
 import '../../reclamation/services/reclamation_service.dart';
 
@@ -573,8 +572,9 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildMenuSection(BuildContext context, UserModel user) {
-    final reclamationsActives = ReclamationService.instance.reclamations
-        .where((reclamation) => reclamation.status != ReclamationStatus.resolue)
+    final reclamationsActives = ReclamationService.instance
+        .visiblesPour(user)
+        .where((reclamation) => !reclamation.status.estCloturee)
         .length;
 
     return Material(

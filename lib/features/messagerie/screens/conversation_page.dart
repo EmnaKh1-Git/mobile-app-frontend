@@ -14,6 +14,7 @@ import '../services/messagerie_service.dart';
 import '../widgets/barre_saisie.dart';
 import '../widgets/bulle_message.dart';
 
+import 'infos_contact_page.dart';
 import 'infos_groupe_page.dart';
 
 // ============================================================
@@ -254,10 +255,11 @@ class _ConversationPageState
 
   Future<void> _ouvrirInfos() async {
     if (!_conversation.estGroupe) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Le profil arrivera plus tard.',
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => InfosContactPage(
+            conversation: _conversation,
           ),
         ),
       );

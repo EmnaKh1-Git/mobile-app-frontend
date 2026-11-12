@@ -219,10 +219,15 @@ class MessagerieRepository {
   }
 
   /// Crée une conversation et ses membres dans une seule transaction.
+  ///
+  /// Avec [remplacer], une conversation de même id (groupe automatique
+  /// créé en même temps sur un autre appareil) est écrasée au lieu de
+  /// faire échouer l'insertion.
   Future<void> creerConversation(
     Conversation conversation,
-    List<Membre> membres,
-  ) async {
+    List<Membre> membres, {
+    bool remplacer = false,
+  }) async {
     final moi = _idUtilisateur();
     if (!membres.any((membre) => membre.id == moi)) {
       throw StateError(
@@ -235,7 +240,9 @@ class MessagerieRepository {
       await txn.insert(
         'msg_conversation',
         conversation.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.abort,
+        conflictAlgorithm: remplacer
+            ? ConflictAlgorithm.replace
+            : ConflictAlgorithm.abort,
       );
 
       for (final membre in membres) {
@@ -282,6 +289,65 @@ class MessagerieRepository {
       );
     } catch (error) {
       debugPrint('[MessagerieRepository] Membre non synchronisé : $error');
+    }
+  }
+
+  /// Groupe rattaché à un trajet, que l'utilisateur connecté en soit
+  /// membre ou non (copie locale synchronisée avec Supabase), ou null.
+  ///
+  /// Sert à la création automatique des groupes de trajet : un passager
+  /// qui vient de réserver doit retrouver le groupe existant pour le
+  /// rejoindre au lieu d'en créer un second.
+  Future<({String id, bool archivee, Set<String> membresIds})?>
+      groupeDuTrajet(String trajetId) async {
+    final db = await _databaseService.database;
+    final lignes = await db.query(
+      'msg_conversation',
+      columns: ['id', 'archivee'],
+      where: 'type = ? AND trajet_id = ?',
+      whereArgs: [TypeConversation.groupe.name, trajetId],
+      orderBy: 'created_at ASC',
+      limit: 1,
+    );
+    if (lignes.isEmpty) return null;
+
+    final id = lignes.first['id'].toString();
+    final membres = await db.query(
+      'msg_membre',
+      columns: ['user_id'],
+      where: 'conversation_id = ?',
+      whereArgs: [id],
+    );
+    return (
+      id: id,
+      archivee: lignes.first['archivee'] == 1,
+      membresIds: {for (final m in membres) m['user_id'].toString()},
+    );
+  }
+
+  /// L'utilisateur connecté rejoint lui-même un groupe de trajet
+  /// (il n'en est pas encore membre, d'où l'absence de _verifierMembre).
+  Future<void> rejoindreConversation(
+    String conversationId,
+    Membre membre,
+  ) async {
+    if (membre.id != _idUtilisateur()) {
+      throw StateError(
+        "Seul l'utilisateur connecté peut rejoindre lui-même un groupe.",
+      );
+    }
+    final db = await _databaseService.database;
+    await db.insert('msg_membre', {
+      'conversation_id': conversationId,
+      ...membre.toMap(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    try {
+      await _supabase.from('msg_membre').upsert(
+        _membreRemoteMap(conversationId, membre),
+        onConflict: 'conversation_id,user_id',
+      );
+    } catch (error) {
+      debugPrint('[MessagerieRepository] Adhésion non synchronisée : $error');
     }
   }
 

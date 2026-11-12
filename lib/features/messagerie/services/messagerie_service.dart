@@ -41,8 +41,11 @@ class MessagerieService extends ChangeNotifier {
   MessagerieService._() {
     _dernierIdUtilisateur = _moiId;
     UserService.instance.addListener(_surChangementUtilisateur);
-    // Les réservations viennent du module Trajets (passagers_trajet)
-    DiscussionService.instance.addListener(notifyListeners);
+    // Les réservations viennent du module Trajets (passagers_trajet) :
+    // chaque changement (réservation, annulation, fin de trajet) met à
+    // jour les groupes automatiques des trajets.
+    DiscussionService.instance.addListener(_surChangementTrajets);
+    TrajetService.instance.addListener(_surChangementTrajets);
     unawaited(charger());
   }
 
@@ -118,6 +121,7 @@ class MessagerieService extends ChangeNotifier {
       _utilisateurCharge = moi;
       _charge = true;
       await chargerUtilisateurs();
+      unawaited(synchroniserGroupesTrajets());
     } catch (_) {
       _erreurChargement =
           'Impossible de charger vos conversations.';
@@ -784,6 +788,262 @@ class MessagerieService extends ChangeNotifier {
     return null;
   }
 
+  // ---------------------------------------------------------
+  // GROUPES AUTOMATIQUES DES TRAJETS
+  // ---------------------------------------------------------
+  //
+  // Dès qu'un trajet a au moins une réservation confirmée, un groupe
+  // réunit le conducteur et ses passagers. Le groupe suit ensuite les
+  // réservations : un nouveau passager le rejoint, un passager qui
+  // annule le quitte, et le groupe est archivé quand le trajet est
+  // terminé ou annulé.
+  //
+  // La synchronisation tourne sur l'appareil de chaque participant :
+  // - id de groupe déterministe (grp_trajet_<id>) pour ne jamais créer
+  //   deux groupes pour le même trajet ;
+  // - un passager peut se rejoindre ou se retirer lui-même ; seul le
+  //   conducteur retire les autres et archive le groupe.
+
+  Future<void>? _synchroGroupes;
+  bool _synchroGroupesARefaire = false;
+
+  /// > 0 pendant une opération qui met déjà le groupe à jour elle-même
+  /// (annulation, fin de trajet) : la synchro attend qu'elle finisse.
+  int _synchroSuspendue = 0;
+
+  void _surChangementTrajets() {
+    notifyListeners();
+    unawaited(synchroniserGroupesTrajets());
+  }
+
+  Future<T> _sansSynchroGroupes<T>(Future<T> Function() action) async {
+    _synchroSuspendue++;
+    try {
+      return await action();
+    } finally {
+      _synchroSuspendue--;
+      if (_synchroSuspendue == 0) {
+        unawaited(synchroniserGroupesTrajets());
+      }
+    }
+  }
+
+  /// Crée ou met à jour les groupes des trajets de l'utilisateur
+  /// connecté (conducteur ou passager). Sans effet tant que les
+  /// trajets, les réservations et les comptes ne sont pas chargés.
+  Future<void> synchroniserGroupesTrajets() {
+    if (_synchroSuspendue > 0) return Future<void>.value();
+    if (_synchroGroupes != null) {
+      _synchroGroupesARefaire = true;
+      return _synchroGroupes!;
+    }
+    return _synchroGroupes = _executerSynchroGroupes().whenComplete(() {
+      _synchroGroupes = null;
+      if (_synchroGroupesARefaire) {
+        _synchroGroupesARefaire = false;
+        unawaited(synchroniserGroupesTrajets());
+      }
+    });
+  }
+
+  Future<void> _executerSynchroGroupes() async {
+    final moi = _moiId;
+    // Données incomplètes : on ne touche à rien (sinon un chargement
+    // en cours ferait croire que tous les passagers ont annulé).
+    if (moi.isEmpty ||
+        !_charge ||
+        _utilisateurs.isEmpty ||
+        !TrajetService.instance.estCharge ||
+        !DiscussionService.instance.estCharge) {
+      return;
+    }
+
+    final monIdTrajet = monId;
+    final trajetsDeMesGroupes = {
+      for (final c in _conversations)
+        if (c.estGroupe && c.trajetId != null) c.trajetId!,
+    };
+
+    var modifie = false;
+    for (final trajet in TrajetService.instance.tous) {
+      final concerne = trajet.conducteurId == monIdTrajet ||
+          DiscussionService.instance.reservationDe(trajet.id, monIdTrajet) !=
+              null ||
+          trajetsDeMesGroupes.contains(trajet.id.toString());
+      if (!concerne) continue;
+
+      try {
+        if (await _synchroniserGroupe(trajet)) modifie = true;
+      } catch (error) {
+        debugPrint(
+          '[MessagerieService] Groupe du trajet ${trajet.id} '
+          'non synchronisé : $error',
+        );
+      }
+      // L'utilisateur a changé pendant la synchronisation.
+      if (_moiId != moi) return;
+    }
+
+    if (modifie) {
+      await _rechargerConversations();
+      notifyListeners();
+    }
+  }
+
+  /// Compte (app_users) correspondant à un identifiant du module Trajets.
+  UserModel? _utilisateurParIdTrajet(int idTrajet) {
+    for (final u in _utilisateurs) {
+      if (idTrajetDe(u.id) == idTrajet) return u;
+    }
+    return null;
+  }
+
+  /// Vrai si le groupe du trajet a été créé ou modifié.
+  Future<bool> _synchroniserGroupe(Trajet trajet) async {
+    final moi = _moiId;
+    final trajetId = trajet.id.toString();
+    final conducteur = _utilisateurParIdTrajet(trajet.conducteurId);
+    // Trajet de démonstration sans compte conducteur : pas de groupe.
+    if (conducteur == null) return false;
+
+    final jeSuisConducteur = conducteur.id == moi;
+    final existant = await _repository.groupeDuTrajet(trajetId);
+
+    // Trajet terminé ou annulé : le conducteur archive le groupe.
+    if (!trajet.statut.estActif) {
+      if (existant == null ||
+          existant.archivee ||
+          !jeSuisConducteur ||
+          !existant.membresIds.contains(moi)) {
+        return false;
+      }
+      await _repository.archiver(existant.id);
+      await _insererMessageSysteme(
+        existant.id,
+        trajet.statut == StatutTrajet.annule
+            ? 'Le trajet a été annulé. Le groupe est archivé.'
+            : 'Le trajet est terminé. Le groupe est archivé.',
+        rafraichir: false,
+        id: 'auto_${existant.id}_archive',
+      );
+      return true;
+    }
+    if (existant?.archivee ?? false) return false;
+
+    final passagers = <Membre>[
+      for (final u in _passagersReserves(trajetId))
+        if (!u.isBanni && !u.isBloque && u.id != conducteur.id)
+          Membre(id: u.id, nom: u.nomComplet),
+    ];
+    final passagersIds = {for (final p in passagers) p.id};
+    final jeSuisPassager = passagersIds.contains(moi);
+
+    // Aucun groupe encore : il naît avec la première réservation.
+    if (existant == null) {
+      if (passagers.isEmpty || !(jeSuisConducteur || jeSuisPassager)) {
+        return false;
+      }
+      final id = 'grp_trajet_$trajetId';
+      final date = DateTime.now();
+      final titre = '${trajet.villeDepart} → ${trajet.villeArrivee}';
+      final membres = <Membre>[
+        Membre(
+          id: conducteur.id,
+          nom: conducteur.nomComplet,
+          role: RoleMembre.conducteur,
+        ),
+        ...passagers,
+      ];
+      await _repository.creerConversation(
+        Conversation(
+          id: id,
+          type: TypeConversation.groupe,
+          titre: titre,
+          trajetLabel: '$titre · ${fDateCourte(trajet.dateDepart)}',
+          membres: membres,
+          dernierMessage: '',
+          dateDernierMessage: date,
+          nonLus: 0,
+          muet: false,
+          trajetId: trajetId,
+          createurId: conducteur.id,
+          dateCreation: date,
+        ),
+        membres,
+        remplacer: true,
+      );
+      await _insererMessageSysteme(
+        id,
+        'Groupe créé automatiquement pour le trajet $titre du '
+        '${fDateCourte(trajet.dateDepart)}. Conducteur : '
+        '${conducteur.nomComplet}.',
+        rafraichir: false,
+        id: 'auto_${id}_creation',
+      );
+      return true;
+    }
+
+    final groupeId = existant.id;
+    final membresIds = {...existant.membresIds};
+    var modifie = false;
+
+    // Je viens de réserver : je rejoins le groupe moi-même.
+    if (!membresIds.contains(moi)) {
+      if (!(jeSuisPassager || jeSuisConducteur)) return false;
+      final moiMembre = jeSuisConducteur
+          ? Membre(id: moi, nom: _moiNom, role: RoleMembre.conducteur)
+          : passagers.firstWhere((p) => p.id == moi);
+      await _repository.rejoindreConversation(groupeId, moiMembre);
+      membresIds.add(moi);
+      if (!jeSuisConducteur) {
+        await _messageArrivee(groupeId, moiMembre);
+      }
+      modifie = true;
+    }
+
+    // Passagers ayant réservé mais pas encore dans le groupe.
+    for (final passager in passagers) {
+      if (membresIds.contains(passager.id)) continue;
+      await _repository.ajouterMembre(groupeId, passager);
+      membresIds.add(passager.id);
+      await _messageArrivee(groupeId, passager);
+      modifie = true;
+    }
+
+    // Membres sans réservation (annulation faite depuis le module
+    // Trajets) : le conducteur les retire, un passager se retire seul.
+    for (final membreId in existant.membresIds) {
+      if (membreId == conducteur.id || passagersIds.contains(membreId)) {
+        continue;
+      }
+      if (!jeSuisConducteur && membreId != moi) continue;
+
+      final nom = utilisateur(membreId)?.nomComplet ?? 'Un passager';
+      // Message avant le retrait : ensuite je ne pourrais plus écrire
+      // dans le groupe si c'est moi qui pars.
+      await _insererMessageSysteme(
+        groupeId,
+        '$nom n\'a plus de réservation et a quitté le groupe.',
+        rafraichir: false,
+      );
+      await _repository.retirerMembre(groupeId, membreId);
+      modifie = true;
+    }
+
+    return modifie;
+  }
+
+  Future<void> _messageArrivee(String groupeId, Membre membre) {
+    // Id stable : deux appareils qui ajoutent le même passager en même
+    // temps n'écrivent qu'un seul message.
+    return _insererMessageSysteme(
+      groupeId,
+      '${membre.nom} a réservé ce trajet et a rejoint le groupe.',
+      rafraichir: false,
+      id: 'auto_${groupeId}_arrivee_${membre.id}',
+    );
+  }
+
   Future<Conversation> creerGroupe({
     required String titre,
     required Trajet trajet,
@@ -1048,6 +1308,14 @@ class MessagerieService extends ChangeNotifier {
   Future<void> annulerReservation(
     String conversationId,
     String passagerId,
+  ) =>
+      _sansSynchroGroupes(
+        () => _annulerReservation(conversationId, passagerId),
+      );
+
+  Future<void> _annulerReservation(
+    String conversationId,
+    String passagerId,
   ) async {
     final conversation = _conversationModifiable(
       conversationId,
@@ -1089,7 +1357,10 @@ class MessagerieService extends ChangeNotifier {
   }
 
   /// Le trajet est terminé, le groupe est archivé.
-  Future<void> terminerTrajet(String conversationId) async {
+  Future<void> terminerTrajet(String conversationId) =>
+      _sansSynchroGroupes(() => _terminerTrajet(conversationId));
+
+  Future<void> _terminerTrajet(String conversationId) async {
     final conversation = this.conversation(conversationId);
     if (conversation == null) {
       throw const MessagerieException(
@@ -1670,9 +1941,10 @@ class MessagerieService extends ChangeNotifier {
     String conversationId,
     String contenu, {
     bool rafraichir = true,
+    String? id,
   }) async {
     final message = Message(
-      id: _nouvelIdMessage(),
+      id: id ?? _nouvelIdMessage(),
       conversationId: conversationId,
       expediteurId: _systemeId,
       expediteurNom: 'Système',
