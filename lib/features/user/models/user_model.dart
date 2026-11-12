@@ -41,6 +41,11 @@ class UserModel {
   final bool isBanni;
   final bool isBloque;
   final String? raisonBlocage;
+  final bool biometrieActive;
+  final bool faceEnrolled;
+  final bool fingerprintEnrolled;
+  final String? faceDataPath;
+  final String? fingerprintDataPath;
 
   const UserModel({
     required this.id,
@@ -64,6 +69,11 @@ class UserModel {
     this.isBanni = false,
     this.isBloque = false,
     this.raisonBlocage,
+    this.biometrieActive = false,
+    this.faceEnrolled = false,
+    this.fingerprintEnrolled = false,
+    this.faceDataPath,
+    this.fingerprintDataPath,
   });
 
   String get nomComplet => '$prenom $nom';
@@ -94,6 +104,11 @@ class UserModel {
     bool? isBanni,
     bool? isBloque,
     String? raisonBlocage,
+    bool? biometrieActive,
+    bool? faceEnrolled,
+    bool? fingerprintEnrolled,
+    String? faceDataPath,
+    String? fingerprintDataPath,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -117,6 +132,11 @@ class UserModel {
       isBanni: isBanni ?? this.isBanni,
       isBloque: isBloque ?? this.isBloque,
       raisonBlocage: raisonBlocage ?? this.raisonBlocage,
+      biometrieActive: biometrieActive ?? this.biometrieActive,
+      faceEnrolled: faceEnrolled ?? this.faceEnrolled,
+      fingerprintEnrolled: fingerprintEnrolled ?? this.fingerprintEnrolled,
+      faceDataPath: faceDataPath ?? this.faceDataPath,
+      fingerprintDataPath: fingerprintDataPath ?? this.fingerprintDataPath,
     );
   }
 
@@ -143,6 +163,11 @@ class UserModel {
       'isBanni': isBanni,
       'isBloque': isBloque,
       'raisonBlocage': raisonBlocage,
+      'biometrieActive': biometrieActive ? 1 : 0,
+      'faceEnrolled': faceEnrolled ? 1 : 0,
+      'fingerprintEnrolled': fingerprintEnrolled ? 1 : 0,
+      'faceDataPath': faceDataPath,
+      'fingerprintDataPath': fingerprintDataPath,
     };
   }
 
@@ -181,6 +206,11 @@ class UserModel {
       isBanni: map['isBanni'] == true || map['isBanni'] == 1,
       isBloque: map['isBloque'] == true || map['isBloque'] == 1,
       raisonBlocage: map['raisonBlocage'],
+      biometrieActive: map['biometrieActive'] == true || map['biometrieActive'] == 1,
+      faceEnrolled: map['faceEnrolled'] == true || map['faceEnrolled'] == 1,
+      fingerprintEnrolled: map['fingerprintEnrolled'] == true || map['fingerprintEnrolled'] == 1,
+      faceDataPath: map['faceDataPath'],
+      fingerprintDataPath: map['fingerprintDataPath'],
     );
   }
 }

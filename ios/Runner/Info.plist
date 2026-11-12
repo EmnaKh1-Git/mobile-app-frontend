@@ -24,6 +24,10 @@
 		<string>????</string>
 		<key>CFBundleVersion</key>
 		<string>$(FLUTTER_BUILD_NUMBER)</string>
+		<key>NSFaceIDUsageDescription</key>
+		<string>Authentification biométrique et reconnaissance faciale sécurisée pour UniDrive</string>
+		<key>NSCameraUsageDescription</key>
+		<string>UniDrive utilise l'appareil photo pour l'enregistrement du visage et la vérification faciale</string>
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
 		<key>UIApplicationSceneManifest</key>

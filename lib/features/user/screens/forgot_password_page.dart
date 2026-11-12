@@ -216,8 +216,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   }
 
   Future<void> _handleResetPassword() async {
-    final newPass = _newPasswordController.text;
-    final confirmPass = _confirmPasswordController.text;
+    final newPass = _newPasswordController.text.trim();
+    final confirmPass = _confirmPasswordController.text.trim();
+    final email = _emailController.text.trim();
 
     if (newPass.length < 6) {
       setState(() {
@@ -239,7 +240,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     });
 
     final success = await _userService.resetPassword(
-      email: _emailController.text,
+      email: email,
       newPassword: newPass,
     );
 
@@ -263,13 +264,13 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
             ],
           ),
           content: const Text(
-            'Votre mot de passe a été mis à jour avec succès. Vous pouvez maintenant vous connecter.',
+            'Votre mot de passe a été mis à jour avec succès. Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.',
           ),
           actions: [
             ElevatedButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
-                Navigator.of(context).pop();
+                Navigator.of(context).pop(email);
               },
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaire),
               child: const Text('Aller à la connexion', style: TextStyle(color: Colors.white)),

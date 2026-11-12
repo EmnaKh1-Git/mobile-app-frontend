@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../app/theme.dart';
@@ -6,9 +6,12 @@ import '../../../core/services/supabase_storage_service.dart';
 import '../models/user_model.dart';
 import '../models/tunisia_data.dart';
 import '../services/user_service.dart';
+import '../services/biometric_service.dart';
 import 'login_page.dart';
 import 'admin_dashboard_page.dart';
 import 'widgets/user_avatar_view.dart';
+import 'widgets/biometric_enrollment_widget.dart';
+import 'widgets/biometric_scanner_modal.dart';
 import '../../reclamation/models/reclamation.dart';
 import '../../reclamation/screens/reclamation_page.dart';
 import '../../reclamation/services/reclamation_service.dart';
@@ -632,6 +635,15 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
             const Divider(height: 1, indent: 56, color: AppColors.bordure),
             _MenuItem(
+              icon: Icons.fingerprint_rounded,
+              title: 'Biométrie & Reconnaissance Faciale',
+              subtitle: user.biometrieActive
+                  ? 'Actif (Empreinte ${user.fingerprintEnrolled ? "✓" : "-"} | Visage ${user.faceEnrolled ? "✓" : "-"})'
+                  : 'Configurer empreinte et reconnaissance faciale',
+              onTap: () => _showBiometricsDialog(context, user),
+            ),
+            const Divider(height: 1, indent: 56, color: AppColors.bordure),
+            _MenuItem(
               icon: Icons.notifications_none_rounded,
               title: 'Notifications & Alertes',
               subtitle: 'Trajets, messages, réservations',
@@ -1154,6 +1166,193 @@ class _ProfilePageState extends State<ProfilePage> {
                       : const Text('Enregistrer'),
                 ),
               ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showBiometricsDialog(BuildContext context, UserModel user) {
+    bool currentFaceEnrolled = user.faceEnrolled;
+    bool currentFingerprintEnrolled = user.fingerprintEnrolled;
+    String? currentFacePath = user.faceDataPath;
+    String? currentFingerprintPath = user.fingerprintDataPath;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalCtx, setModalState) {
+            return Container(
+              padding: EdgeInsets.only(
+                top: 18,
+                left: 20,
+                right: 20,
+                bottom: MediaQuery.of(modalCtx).viewInsets.bottom + 24,
+              ),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 42,
+                        height: 4.5,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 18,
+                              backgroundColor: AppColors.primaireDoux,
+                              child: Icon(
+                                Icons.fingerprint_rounded,
+                                color: AppColors.primaire,
+                                size: 22,
+                              ),
+                            ),
+                            SizedBox(width: 10),
+                            Text(
+                              'Biométrie & Reconnaissance',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () => Navigator.of(modalCtx).pop(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Configurez votre empreinte digitale et votre visage pour une connexion sécurisée et rapide sans ressaisir votre mot de passe.',
+                      style: TextStyle(fontSize: 12.5, color: AppColors.texte2),
+                    ),
+                    const SizedBox(height: 16),
+                    BiometricEnrollmentWidget(
+                      userIdentifier: user.email,
+                      initialFaceEnrolled: currentFaceEnrolled,
+                      initialFingerprintEnrolled: currentFingerprintEnrolled,
+                      initialFacePath: currentFacePath,
+                      initialFingerprintPath: currentFingerprintPath,
+                      onBiometricChanged: ({
+                        required bool faceEnrolled,
+                        required bool fingerprintEnrolled,
+                        String? facePath,
+                        String? fingerprintPath,
+                      }) {
+                        setModalState(() {
+                          currentFaceEnrolled = faceEnrolled;
+                          currentFingerprintEnrolled = fingerprintEnrolled;
+                          currentFacePath = facePath;
+                          currentFingerprintPath = fingerprintPath;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        await BiometricScannerModal.show(
+                          modalCtx,
+                          targetEmail: user.email,
+                          enrolledFacePath: currentFacePath,
+                        );
+                      },
+                      icon: const Icon(
+                        Icons.verified_rounded,
+                        color: AppColors.primaire,
+                        size: 20,
+                      ),
+                      label: const Text(
+                        'Tester la connexion biométrique maintenant',
+                        style: TextStyle(
+                          color: AppColors.primaire,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        side: const BorderSide(color: AppColors.primaire),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: () async {
+                        final creds = await BiometricService.instance
+                            .getEnrolledCredentials();
+                        final password =
+                            creds?['password'] ?? 'BiometricAuthKey!';
+
+                        if (currentFaceEnrolled ||
+                            currentFingerprintEnrolled) {
+                          await _userService.enrollBiometrics(
+                            email: user.email,
+                            password: password,
+                            faceEnrolled: currentFaceEnrolled,
+                            fingerprintEnrolled: currentFingerprintEnrolled,
+                            faceDataPath: currentFacePath,
+                            fingerprintDataPath: currentFingerprintPath,
+                          );
+                        } else {
+                          await _userService.disableBiometrics(user.email);
+                        }
+
+                        if (!modalCtx.mounted) return;
+                        Navigator.of(modalCtx).pop();
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              '✓ Paramètres biométriques mis à jour avec succès !',
+                            ),
+                            backgroundColor: AppColors.primaire,
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaire,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: const Text(
+                        'Sauvegarder les modifications',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             );
           },
         );

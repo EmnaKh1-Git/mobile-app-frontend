@@ -101,6 +101,31 @@ class DatabaseServicee {
         0;
   }
 
+  Future<bool> updateBiometrics(
+    String userId, {
+    required bool enabled,
+    required bool face,
+    required bool fingerprint,
+    String? faceDataPath,
+  }) async {
+    final db = await _database;
+    final map = <String, dynamic>{
+      'biometrieActive': enabled ? 1 : 0,
+      'faceEnrolled': face ? 1 : 0,
+      'fingerprintEnrolled': fingerprint ? 1 : 0,
+    };
+    if (faceDataPath != null) {
+      map['faceDataPath'] = faceDataPath;
+    }
+    return await db.update(
+          'app_users',
+          map,
+          where: 'id = ?',
+          whereArgs: [userId],
+        ) >
+        0;
+  }
+
   Future<bool> updateUser(UserModel user) async {
     final db = await _database;
     final values = user.toMap()

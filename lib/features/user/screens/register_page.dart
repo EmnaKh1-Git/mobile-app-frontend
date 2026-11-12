@@ -6,11 +6,13 @@ import '../../../core/services/supabase_storage_service.dart';
 import '../models/user_model.dart';
 import '../models/tunisia_data.dart';
 import '../services/user_service.dart';
+import '../services/biometric_service.dart';
 import '../../../screens/accueil_page.dart';
 import 'widgets/captcha_widget.dart';
 import 'widgets/user_avatar_view.dart';
 import 'widgets/google_sign_in_modal.dart';
 import 'widgets/auth_map_background.dart';
+import 'widgets/biometric_enrollment_widget.dart';
 import 'privacy_policy_page.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -56,6 +58,11 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _isGoogleLoading = false;
   String? _errorMessage;
   int _currentStep = 0;
+
+  bool _faceEnrolled = false;
+  bool _fingerprintEnrolled = false;
+  String? _enrolledFacePath;
+  String? _enrolledFingerprintPath;
 
   final _userService = UserService.instance;
 
@@ -363,6 +370,38 @@ class _RegisterPageState extends State<RegisterPage> {
       }
     }
 
+    // Vérification d'unicité biométrique avant création du compte
+    final emailCandidate = _emailController.text.trim();
+    if (_faceEnrolled && _enrolledFacePath != null) {
+      final dupFace = await BiometricService.instance.checkFaceDuplicate(
+        _enrolledFacePath!,
+        excludeEmail: emailCandidate,
+      );
+      if (dupFace.isDuplicate) {
+        setState(() {
+          _errorMessage = dupFace.message;
+          _isLoading = false;
+        });
+        return;
+      }
+    }
+
+    if (_fingerprintEnrolled) {
+      if (_enrolledFingerprintPath != null) {
+        final dupFp = await BiometricService.instance.checkFingerprintPhotoDuplicate(
+          _enrolledFingerprintPath!,
+          excludeEmail: emailCandidate,
+        );
+        if (dupFp.isDuplicate) {
+          setState(() {
+            _errorMessage = dupFp.message;
+            _isLoading = false;
+          });
+          return;
+        }
+      }
+    }
+
     final success = await _userService.register(
       nom: _nomController.text,
       prenom: _prenomController.text,
@@ -381,6 +420,11 @@ class _RegisterPageState extends State<RegisterPage> {
           ? _immatriculationController.text
           : null,
       placesDisponibles: _selectedRole.isConducteur ? _placesDisponibles : 0,
+      biometrieActive: _faceEnrolled || _fingerprintEnrolled,
+      faceEnrolled: _faceEnrolled,
+      fingerprintEnrolled: _fingerprintEnrolled,
+      faceDataPath: _enrolledFacePath,
+      fingerprintDataPath: _enrolledFingerprintPath,
     );
 
     if (!mounted) return;
@@ -1296,6 +1340,31 @@ class _RegisterPageState extends State<RegisterPage> {
                         return 'Les mots de passe ne correspondent pas';
                       }
                       return null;
+                    },
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Option d'enregistrement biométrique (Visage et Empreinte)
+                  BiometricEnrollmentWidget(
+                    userIdentifier: _emailController.text.trim().isNotEmpty
+                        ? _emailController.text.trim()
+                        : '${_prenomController.text}_${_nomController.text}',
+                    initialFaceEnrolled: _faceEnrolled,
+                    initialFingerprintEnrolled: _fingerprintEnrolled,
+                    initialFacePath: _enrolledFacePath,
+                    initialFingerprintPath: _enrolledFingerprintPath,
+                    onBiometricChanged: ({
+                      required faceEnrolled,
+                      required fingerprintEnrolled,
+                      facePath,
+                      fingerprintPath,
+                    }) {
+                      setState(() {
+                        _faceEnrolled = faceEnrolled;
+                        _fingerprintEnrolled = fingerprintEnrolled;
+                        _enrolledFacePath = facePath;
+                        _enrolledFingerprintPath = fingerprintPath;
+                      });
                     },
                   ),
                   const SizedBox(height: 14),
